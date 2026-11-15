@@ -57,14 +57,17 @@ export function toast(message, { error = false, ms = 3500 } = {}) {
 }
 
 /** A box over the page. body: nodes. actions: [{label, primary, danger, value}]. Resolves with the action's value (or undefined if closed). */
-export function dialog({ title, body = [], actions = [{ label: 'OK', primary: true, value: true }], dismissible = true, wide = false }) {
+export function dialog({ title, body = [], actions = [{ label: 'OK', primary: true, value: true }], dismissible = true, wide = false, outsideClose = true }) {
   return new Promise((resolve) => {
     const prev = document.activeElement;
     const close = (v) => { overlay.remove(); document.removeEventListener('keydown', onKey, true); prev?.focus?.(); resolve(v); };
     const onKey = (e) => { if (e.key === 'Escape' && dismissible) { e.stopPropagation(); close(undefined); } };
     const buttons = actions.map((a) => h('button', { class: `btn ${a.primary ? 'primary' : ''} ${a.danger ? 'danger' : ''}`, type: 'button', onclick: () => { if (!a.onClick) return close(a.value); const v = a.onClick(); if (v !== undefined) close(v); } }, a.label));
     const box = h('div', { class: `dialog${wide ? ' wide' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, h('h2', {}, title), h('div', { class: 'dialog-body' }, typeof body === 'function' ? body(close) : body), h('div', { class: 'dialog-actions' }, buttons));
-    const overlay = h('div', { class: 'overlay', onclick: (e) => { if (e.target === overlay && dismissible) close(undefined); } }, box);
+    // Only a press AND release on the dark area close the box. Selecting text (double-click, or dragging from inside a
+    // field to outside the box) must never close it, and boxes with typing never close by tapping outside.
+    let pressedOutside = false;
+    const overlay = h('div', { class: 'overlay', onpointerdown: (e) => { pressedOutside = e.target === overlay; }, onclick: (e) => { if (e.target === overlay && pressedOutside && dismissible && outsideClose) close(undefined); pressedOutside = false; } }, box);
     document.body.append(overlay);
     document.addEventListener('keydown', onKey, true);
     (box.querySelector('input,textarea') || buttons.at(-1))?.focus();
@@ -78,7 +81,7 @@ export async function askText(title, { label = '', value = '', placeholder = '',
   const input = h('input', { type: 'text', value, placeholder, class: 'field', 'aria-label': label || title, autocomplete: 'off' });
   let out;
   const r = await dialog({
-    title, body: [label ? h('label', { class: 'lbl' }, label) : null, input],
+    title, outsideClose: false, body: [label ? h('label', { class: 'lbl' }, label) : null, input],
     actions: [{ label: 'Cancel', value: false }, { label: yes, primary: true, onClick: () => { out = input.value.trim(); return true; } }],
   });
   return r ? out : null;
@@ -159,7 +162,7 @@ export async function nameDialog(lib, { heading, title = '', singer = '', yes = 
   const sf = singerField(lib, { value: singer });
   let out = null;
   const ok = await dialog({
-    title: heading,
+    title: heading, outsideClose: false,
     body: [h('label', { class: 'lbl' }, 'Song name'), t, h('label', { class: 'lbl' }, 'Singer'), sf.el],
     actions: [{ label: 'Cancel', value: false }, { label: yes, primary: true, onClick: () => {
       if (needTitle && !t.value.trim()) { toast('The song needs a name.', { error: true }); t.focus(); return undefined; }

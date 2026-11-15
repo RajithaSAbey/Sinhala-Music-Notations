@@ -60,7 +60,7 @@ function publicSite(gh, db) {
 }
 const codeFor = (gh, db, member = true) => create({ repo: gh.repo, branch: db.branch, folder: db.folder, token: gh.token, member });
 
-async function open(gh, { cfg, viewport = { width: 390, height: 844 }, scale = 1 } = {}) {
+async function open(gh, { cfg, viewport = { width: 390, height: 844 }, scale = 1, hash = '#/songs' } = {}) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: scale, acceptDownloads: true, serviceWorkers: 'allow' });
   await context.route('https://api.github.com/**', (r) => gh.handle(r));
   const cors = { 'access-control-allow-origin': '*' };
@@ -97,7 +97,7 @@ async function open(gh, { cfg, viewport = { width: 390, height: 844 }, scale = 1
   page.on('pageerror', (e) => page.errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|net::ERR/.test(m.text())) page.errors.push(m.text()); });
   if (cfg) await page.addInitScript((c) => { if (!localStorage.getItem('nsm.cfg')) localStorage.setItem('nsm.cfg', JSON.stringify(c)); }, cfg);
-  await page.goto(base);
+  await page.goto(base + hash);
   return page;
 }
 const adminCfg = (gh, db) => ({ repo: gh.repo, branch: db.branch, folder: db.folder, token: gh.token, role: 'admin', readOnly: false });
@@ -123,6 +123,8 @@ test('first visit: guide, paste code, first download, then the list', async () =
   await page.getByText('How should the pictures be kept?').waitFor();
   await shot(page, 'guide-step3');
   await page.getByRole('button', { name: 'Finish' }).click();
+  await page.waitForSelector('.tile'); // lands on the singer list
+  await page.getByRole('link', { name: 'Songs' }).click();
   await ready(page);
   assert.equal(await page.locator('.count').textContent(), '41 songs'); // 40 + the one with the odd title; to-do and removed are not listed
   assert.ok(!(await rowTitles(page)).includes('Removed Song'));
@@ -673,4 +675,41 @@ test('singer tiles are in Sinhala alphabetical order, Sinhala names first', asyn
   const latin = names.slice(4);
   assert.deepEqual(latin, [...latin].sort((a, b) => a.localeCompare(b)));
   await shot(page, 'singers-sinhala');
+});
+
+test('selecting text in the rename box (double-click, or dragging out of it) never closes it', async () => {
+  const { gh, db } = newGitHub();
+  const page = await open(gh, { cfg: memberCfg(gh, db), viewport: { width: 900, height: 700 } });
+  await ready(page);
+  await page.locator('.songs .row-main').first().click();
+  await page.waitForSelector('.viewer .v-img[src]');
+  await page.getByRole('button', { name: 'More' }).click();
+  await page.getByRole('button', { name: /Change the name or singer/ }).click();
+  const name = page.getByRole('textbox', { name: 'Song name' });
+  await name.waitFor();
+  await name.fill('Sanda Walawan');
+  await name.dblclick();                                  // select a word
+  assert.equal(await page.locator('.dialog').count(), 1);
+  const box = await name.boundingBox();
+  await page.mouse.move(box.x + 20, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(8, 8, { steps: 6 });             // drag the selection right out of the box
+  await page.mouse.up();
+  assert.equal(await page.locator('.dialog').count(), 1, 'still open');
+  assert.equal(await name.inputValue(), 'Sanda Walawan', 'nothing typed is lost');
+  await page.mouse.click(8, 8);                           // a plain tap outside does not throw the typing away either
+  assert.equal(await page.locator('.dialog').count(), 1);
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  assert.equal(await page.locator('.dialog').count(), 0);
+});
+
+test('the plain web address opens the singer list', async () => {
+  const { gh } = newGitHub();
+  const page = await open(gh, { hash: '' });
+  await page.waitForSelector('.tile');
+  assert.equal(await page.getByRole('heading', { name: 'Singers' }).count(), 1);
+  assert.equal(await page.locator('nav.tabs .tab.active').textContent(), 'Singers');
+  await page.getByRole('link', { name: 'Songs' }).click();
+  await page.waitForSelector('.songs .row');
+  assert.match(page.url(), /#\/songs$/);
 });

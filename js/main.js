@@ -146,7 +146,7 @@ function updateBadge() {
 // ---------- routes ----------
 function route() {
   const lib = S.lib;
-  const hash = location.hash.replace(/^#\/?/, '') || 'songs';
+  const hash = location.hash.replace(/^#\/?/, '') || 'singers'; // the address with nothing after it opens the singer list
   const [name, arg] = hash.split('/').map(decodeURIComponent);
   updateBadge();
   if (name === 'song') {
@@ -174,7 +174,7 @@ function mountBase(hash, name, arg) {
     todo: () => todoTab(main), add: () => addView(main), edit: () => editor(main, arg), settings: () => settingsView(main, { syncNow: () => doSync({ silent: false }), disconnect }),
     feedback: () => feedbackView(main), help: () => helpView(main),
   };
-  baseDispose = (views[name] || views.songs)();
+  baseDispose = (views[name] || views.singers)();
   baseRoute = hash;
   document.title = 'Sinhala Music Notations';
 }
