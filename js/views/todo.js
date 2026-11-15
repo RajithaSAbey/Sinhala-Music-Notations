@@ -4,6 +4,7 @@ import { S, openSong, isAdmin, canEditSongs, go } from '../state.js';
 import { icon, toast, confirmBox, empty, friendly, chip } from '../ui.js';
 import { similarity } from '../phonetic.js';
 import { prefs } from '../store.js';
+import { titleFromName } from '../upload.js';
 
 export function todoTab(root) {
   const lib = S.lib;
@@ -73,6 +74,7 @@ export function todoTab(root) {
         if (lib.findSame(v, s.uid)) note.textContent = 'A song with this name is already there. These pictures will be added to it as extra pages.';
       }
     };
+    if (s.sourceName && !title.value) { const t = titleFromName(s.sourceName); if (t) { title.value = t; setTimeout(suggest, 0); } }
     title.addEventListener('input', suggest);
     title.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSave(); });
 

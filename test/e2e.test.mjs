@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { FakeGitHub, sampleDatabase } from './fakegithub.mjs';
 import { create } from '../js/setupcode.js';
-import { PUBLIC_BASE } from '../js/config.js';
+import { PUBLIC_BASE, UPLOAD_URL } from '../js/config.js';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -64,6 +64,16 @@ async function open(gh, { cfg, viewport = { width: 390, height: 844 }, scale = 1
   const context = await browser.newContext({ viewport, deviceScaleFactor: scale, acceptDownloads: true, serviceWorkers: 'allow' });
   await context.route('https://api.github.com/**', (r) => gh.handle(r));
   const cors = { 'access-control-allow-origin': '*' };
+  gh.intake ??= [];
+  await context.route(`${new URL(UPLOAD_URL).origin}/**`, async (r) => {
+    const req = r.request();
+    const h = { ...cors, 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' };
+    if (req.method() === 'OPTIONS') return r.fulfill({ status: 204, headers: h });
+    if (gh.intakeLimitOnce) { gh.intakeLimitOnce = false; return r.fulfill({ status: 429, headers: { ...h, 'retry-after': '1' }, body: JSON.stringify({ error: 'slow down' }) }); }
+    const hd = req.headers();
+    gh.intake.push({ group: hd['x-group'], index: Number(hd['x-index']), pages: Number(hd['x-pages']), name: decodeURIComponent(hd['x-name']), bytes: req.postDataBuffer() });
+    return r.fulfill({ status: 200, headers: { ...h, 'content-type': 'application/json' }, body: '{"ok":true}' });
+  });
   await context.route(`${PUBLIC_BASE}/**`, (r) => {
     const site = gh.publicSite;
     const u = new URL(r.request().url());
@@ -492,15 +502,13 @@ test('public library: opens with no code, reads everything public, nothing priva
   assert.equal(await page.locator('.count').textContent(), '40 songs'); // not the to-do pictures, not the one marked private
   assert.ok(!(await rowTitles(page)).includes('Adaraneeya Hamuwe'));
   assert.equal(await page.getByRole('link', { name: /To-do/ }).count(), 0);
-  assert.equal(await page.getByRole('button', { name: 'Add songs' }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Add songs' }).count(), 1); // anyone may send pictures
   await searchFor(page, 'සැන්දෑ');
   await page.locator('.songs .row-main', { hasText: 'සැන්දෑ වලාවන්' }).first().click();
   await page.waitForFunction(() => document.querySelector('.v-img')?.naturalWidth > 0);
   assert.match(await page.locator('.v-count').textContent(), /Page 1 of 2/);
   await shot(page, 'public-viewer');
   await page.keyboard.press('Escape');
-  await page.goto(`${base}#/add`);
-  await page.getByText('Adding songs needs a helper code').waitFor();
   await page.getByRole('link', { name: 'Settings' }).click();
   await shot(page, 'public-settings');
   assert.equal(gh.calls.length, 0, 'GitHub was never contacted');
@@ -524,4 +532,28 @@ test('public library: not published yet gives a plain message', async () => {
   const page = await open(gh);
   await page.getByText('Could not get the songs').waitFor();
   assert.match(await page.locator('.dialog').textContent(), /not published yet/);
+});
+
+test('public upload: anyone can send pictures and PDFs; repeats are skipped; they go to the intake, never to GitHub', async () => {
+  const { gh } = newGitHub();
+  const page = await open(gh, { scale: 2 });
+  await ready(page);
+  await page.getByRole('button', { name: 'Add songs' }).click();
+  await page.waitForSelector('.dropzone');
+  assert.equal(await page.getByText('A helper first gives each one a name').count(), 1);
+  assert.equal(await page.getByText('Try to read the name from pictures').count(), 0);
+  await shot(page, 'public-add');
+  gh.intakeLimitOnce = true; // the first send is told to slow down, and carries on by itself
+  await page.locator('input[type=file][accept^="image"]').first().setInputFiles([fx('Hithuwakkaraya.jpg'), fx('IMG_0001.jpg'), fx('p1-copy.jpg'), fx('Rathri Yame.pdf')]);
+  await page.waitForSelector('.card.done', { timeout: 60000 });
+  const t = await page.locator('.card.done').textContent();
+  assert.match(t, /5 pictures sent/); assert.match(t, /already in the library/);
+  const hith = gh.intake.filter((x) => x.name === 'Hithuwakkaraya.jpg');
+  assert.equal(hith.length, 1); assert.equal(Buffer.compare(hith[0].bytes, fs.readFileSync(fx('Hithuwakkaraya.jpg'))), 0, 'sent byte for byte');
+  const pdf = gh.intake.filter((x) => x.name === 'Rathri Yame.pdf').sort((a, b) => a.index - b.index);
+  assert.deepEqual(pdf.map((x) => [x.index, x.pages]), [[0, 3], [1, 3], [2, 3]]);
+  assert.equal(new Set(pdf.map((x) => x.group)).size, 1);
+  assert.ok(gh.intake.every((x) => x.bytes[0] === 0xff && x.bytes[1] === 0xd8));
+  assert.equal(gh.calls.length, 0, 'GitHub was never contacted');
+  assert.deepEqual(page.errors, []);
 });

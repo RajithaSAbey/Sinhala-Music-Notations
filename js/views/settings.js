@@ -12,7 +12,7 @@ export function settingsView(root, { syncNow, disconnect }) {
   const usage = h('p', { class: 'muted' }, 'Counting…');
   const el = h('section', { class: 'settings' }, h('div', { class: 'view-head' }, h('h1', {}, 'Settings')));
   root.append(el);
-  const role = lib.isPublic ? 'Public library: you can read every song. Adding songs needs a helper code from the admin.' : { admin: 'Admin: you can do everything', member: 'Helper: you can add songs and name pictures', reader: 'Reader: you can look at songs (adding is switched off)' }[lib.role];
+  const role = lib.isPublic ? 'Public library: you can read every song and send new pictures. Naming pictures and everything else needs a helper code from the admin.' : { admin: 'Admin: you can do everything', member: 'Helper: you can add songs and name pictures', reader: 'Reader: you can look at songs (adding is switched off)' }[lib.role];
   const group = (title, ...kids) => h('div', { class: 'group' }, h('h3', {}, title), ...kids);
   const row = (label, hint, action) => h('div', { class: 'srow' }, h('div', {}, h('strong', {}, label), hint ? h('div', { class: 'muted small' }, hint) : null), action);
   const btn = (label, fn, cls = '') => h('button', { class: `btn ${cls}`, type: 'button', onclick: fn }, label);

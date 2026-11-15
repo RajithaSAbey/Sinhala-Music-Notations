@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: 22
       - name: Quick checks (search rules, database code, file format)
-        run: node --test test/unit.test.mjs
+        run: node --test test/unit.test.mjs test/worker.test.mjs
 
   deploy:
     needs: test

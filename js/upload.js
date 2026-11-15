@@ -2,6 +2,7 @@
 import { sha256, uuid, sleep, RateLimited, PermanentError } from './util.js';
 import { newSong, parseSong, plainCopy, UNTITLED } from './library.js';
 import { same } from './phonetic.js';
+import { UPLOAD_URL } from './config.js';
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif|bmp|heic|heif|avif)$/i;
 export const isPdf = (f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
@@ -221,3 +222,67 @@ export function describe(r) {
   return bits.length ? bits.join(', ') + '.' : 'Nothing new to add.';
 }
 export { PermanentError };
+
+
+/**
+ * Public upload (no database code): each picture is sent to the intake. Nothing existing is touched; a helper names and
+ * checks the pictures in the To-do tab before they can appear in the public library.
+ * Returns { songs, pictures, duplicates, unreadable, stopped }.
+ */
+export async function addAsVisitor(lib, files, opts = {}) {
+  const { onStatus = () => {}, onProgress = () => {}, signal = { cancelled: false } } = opts;
+  const result = { songs: 0, pictures: 0, duplicates: 0, unreadable: 0, stopped: false };
+  const units = files.filter((f) => isPdf(f) || isImage(f));
+  result.unreadable = files.length - units.length;
+  units.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const seen = new Set();
+
+  const send = async (bytes, group, index, pages, name) => {
+    for (let attempt = 0; ; attempt++) {
+      let res;
+      try {
+        res = await fetch(UPLOAD_URL, { method: 'POST', body: bytes, headers: { 'content-type': 'image/jpeg', 'x-group': group, 'x-index': String(index), 'x-pages': String(pages), 'x-name': encodeURIComponent(name) } });
+      } catch {
+        if (attempt >= 3) throw new Error('No connection. Check your internet and try again.');
+        await sleep(1500 * (attempt + 1)); continue;
+      }
+      if (res.ok) return;
+      if (res.status === 429) {
+        for (let s = 35; s > 0 && !signal.cancelled; s--) { onStatus(`Sending is paused for a moment (${s}s). It continues by itself.`); await sleep(1000); }
+        if (signal.cancelled) throw new Error('Stopped.');
+        continue;
+      }
+      let msg = '';
+      try { msg = (await res.json()).error; } catch { /* no details */ }
+      if (res.status >= 500 && res.status !== 503 && attempt < 3) { await sleep(1500 * (attempt + 1)); continue; }
+      throw new Error(msg || `The upload was refused (${res.status}).`);
+    }
+  };
+
+  let done = 0;
+  for (const f of units) {
+    if (signal.cancelled) { result.stopped = true; break; }
+    onProgress(done, units.length);
+    onStatus(`Reading ${f.name}`);
+    let pics;
+    try { pics = isPdf(f) ? await pdfPages(f, { onPage: (n, t) => onStatus(`Reading ${f.name} (page ${n} of ${t})`) }) : [await pictureBytes(f)]; } catch { result.unreadable++; done++; continue; }
+    const fresh = [];
+    for (const bytes of pics) {
+      const hash = await sha256(bytes);
+      if (lib.hashes.has(hash) || seen.has(hash)) { result.duplicates++; continue; }
+      seen.add(hash); fresh.push(bytes);
+    }
+    if (fresh.length) {
+      const group = uuid();
+      for (const [i, bytes] of fresh.entries()) {
+        onStatus(`Sending ${f.name}${fresh.length > 1 ? ` (page ${i + 1} of ${fresh.length})` : ''}`);
+        await send(bytes, group, i, fresh.length, f.name);
+        result.pictures++;
+      }
+      result.songs++;
+    }
+    done++;
+  }
+  onProgress(done, units.length);
+  return result;
+}

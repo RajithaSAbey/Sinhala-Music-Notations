@@ -17,6 +17,17 @@ Same as the Android app:
 - Message to the admin (with pictures) – it appears in the admin panel of the nightly backup.
 - Roles come from the database code (`NSHELF1.…`): admin, helper (can add, cannot delete), reader.
 
+## Public library (no code needed)
+
+Anyone who opens the page without a database code gets the **public library**: a read-only copy of the songs and pictures on Cloudflare R2
+(`js/config.js` has the addresses). The nightly job in the `REST` repository publishes it; songs that are deleted, waiting in the To-do list,
+or marked `NOT-A-SONG` / `KEEP-PRIVATE` in their notes are not included, and notes are never published.
+
+Anyone may also **send pictures or PDFs** (they never touch GitHub): `worker/intake.js` is a Cloudflare Worker that only accepts JPEGs from this site,
+rate-limits each visitor, and drops them in a private bucket. Every few hours `import-public-uploads.yml` (in `REST`) turns them into new
+songs in the To-do list. They cannot change or delete anything, and they stay out of the public library until a helper or the admin names them.
+Deploy the worker with `CLOUDFLARE_API_TOKEN=… worker/deploy.sh`.
+
 ## How it works
 
 There is no server. The page talks straight to GitHub's API with the key inside the person's database code, which is kept only in that browser (`localStorage`). The key is sent only to `api.github.com` (enforced by a Content-Security-Policy).

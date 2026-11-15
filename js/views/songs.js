@@ -180,7 +180,7 @@ export function voiceButton(onText) {
 export function songsTab(root) {
   const lib = S.lib;
   const dispose = songList(root, { songs: () => lib.live().filter((s) => s.titleState !== 2), name: "", showFilters: true, keepQuery: false, emptyHint: ['The database is empty', 'Add pictures with the + button.'] });
-  const fab = canEditSongs() ? h('button', { class: 'fab', type: 'button', 'aria-label': 'Add songs', onclick: () => go('#/add') }, icon('plus', 26), h('span', {}, 'Add')) : null;
+  const fab = (canEditSongs() || lib.isPublic) ? h('button', { class: 'fab', type: 'button', 'aria-label': 'Add songs', onclick: () => go('#/add') }, icon('plus', 26), h('span', {}, 'Add')) : null;
   if (fab) root.append(fab);
   return () => { dispose(); fab?.remove(); };
 }

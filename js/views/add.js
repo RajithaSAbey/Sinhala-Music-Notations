@@ -3,16 +3,15 @@ import { h } from '../util.js';
 import { S, canEditSongs, go } from '../state.js';
 import { prefs } from '../store.js';
 import { icon, iconButton, toast, friendly, empty } from '../ui.js';
-import { addToDatabase, describe, expandDrop, isImage, isPdf } from '../upload.js';
+import { addToDatabase, addAsVisitor, describe, expandDrop, isImage, isPdf } from '../upload.js';
 
 export function addView(root) {
   const lib = S.lib;
   const el = h('section', { class: 'add' }, h('div', { class: 'view-head' }, iconButton('back', 'Back', () => history.back()), h('h1', {}, 'Add songs')));
   root.append(el);
-  if (!canEditSongs()) {
-    el.append(lib.isPublic
-      ? empty('Adding songs needs a helper code', 'Reading is open to everyone. To add songs or name pictures, ask the admin for a database code.', h('button', { class: 'btn primary', type: 'button', onclick: () => S.signIn() }, 'I have a database code'))
-      : empty('This device can only read', 'Ask the admin for a new database code if you would like to add songs.'));
+  const visitor = lib.isPublic;
+  if (!canEditSongs() && !visitor) {
+    el.append(empty('This device can only read', 'Ask the admin for a new database code if you would like to add songs.'));
     return () => el.remove();
   }
   let running = false;
@@ -37,6 +36,11 @@ export function addView(root) {
   drop.addEventListener('drop', async (e) => { e.preventDefault(); drop.classList.remove('over'); start(await expandDrop(e.dataTransfer)); });
 
   el.append(
+    visitor ? h('div', { class: 'howto' }, h('p', {}, h('strong', {}, 'Thank you for helping! ')), h('ul', {},
+      h('li', {}, 'Choose pictures or PDFs of song notations. They are sent exactly as they are, with no loss of quality.'),
+      h('li', {}, 'Pictures already in the library are skipped.'),
+      h('li', {}, 'Your pictures do not appear straight away. A helper first gives each one a name and checks it. This can take a day or two.'),
+      h('li', {}, 'Please send only notations you are happy to share.'))) :
     h('div', { class: 'howto' }, h('ul', {},
       h('li', {}, 'Pictures are saved exactly as they are, with no loss of quality.'),
       h('li', {}, 'A picture that is already in the database is skipped automatically.'),
@@ -44,7 +48,7 @@ export function addView(root) {
       h('li', {}, 'A PDF becomes one song, with every page as a picture.'),
       h('li', {}, 'Pictures with no useful name (like IMG_1234) wait in the To-do tab so someone can name them.'))),
     drop, pick, folder,
-    h('label', { class: 'check-line' }, readTitles, h('span', {}, ' Try to read the name from pictures that have no file name (slow, not always right)')),
+    visitor ? null : h('label', { class: 'check-line' }, readTitles, h('span', {}, ' Try to read the name from pictures that have no file name (slow, not always right)')),
     progress, result);
 
   async function start(files) {
@@ -55,15 +59,15 @@ export function addView(root) {
     const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
     window.addEventListener('beforeunload', warn);
     try {
-      const r = await addToDatabase(lib, files, {
-        readTitles: readTitles.checked, signal,
+      const common = {
         onStatus: (t) => { status.textContent = t; },
         onProgress: (d, t) => { bar.firstChild.style.width = `${(d / Math.max(1, t)) * 100}%`; },
-      });
+      };
+      const r = visitor ? await addAsVisitor(lib, files, { ...common, signal }) : await addToDatabase(lib, files, { ...common, readTitles: readTitles.checked, signal });
       progress.hidden = true;
-      result.replaceChildren(h('div', { class: 'card done' }, icon('check', 28), h('div', {}, h('strong', {}, r.stopped ? 'Stopped' : 'Done'), h('p', {}, `${r.pictures} picture${r.pictures === 1 ? '' : 's'} added. ${describe(r)}`))),
+      result.replaceChildren(h('div', { class: 'card done' }, icon('check', 28), h('div', {}, h('strong', {}, r.stopped ? 'Stopped' : 'Done'), h('p', {}, visitor ? visitorSummary(r) : `${r.pictures} picture${r.pictures === 1 ? '' : 's'} added. ${describe(r)}`))),
         h('div', { class: 'row-actions' }, h('button', { class: 'btn primary', type: 'button', onclick: () => { result.replaceChildren(); drop.hidden = false; } }, 'Add more'),
-          r.todo ? h('button', { class: 'btn', type: 'button', onclick: () => go('#/todo') }, 'Open To-do') : null,
+          !visitor && r.todo ? h('button', { class: 'btn', type: 'button', onclick: () => go('#/todo') }, 'Open To-do') : null,
           h('button', { class: 'btn', type: 'button', onclick: () => go('#/songs') }, 'Go to songs')));
     } catch (e) {
       progress.hidden = true; drop.hidden = false;
@@ -71,4 +75,12 @@ export function addView(root) {
     } finally { running = false; window.removeEventListener('beforeunload', warn); }
   }
   return () => { signal.cancelled = true; el.remove(); };
+}
+
+function visitorSummary(r) {
+  const bits = [];
+  if (r.pictures) bits.push(`${r.pictures} picture${r.pictures === 1 ? '' : 's'} sent. A helper will name and check ${r.pictures === 1 ? 'it' : 'them'} before ${r.pictures === 1 ? 'it appears' : 'they appear'} in the library.`);
+  if (r.duplicates) bits.push(`${r.duplicates} skipped because ${r.duplicates === 1 ? 'it was' : 'they were'} already in the library.`);
+  if (r.unreadable) bits.push(`${r.unreadable} could not be read.`);
+  return bits.join(' ') || 'Nothing new to send.';
 }
