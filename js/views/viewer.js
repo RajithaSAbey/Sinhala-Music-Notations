@@ -2,7 +2,7 @@
 import { h } from '../util.js';
 import { S, favs, recents, canEditSongs, isAdmin, go } from '../state.js';
 import { prefs } from '../store.js';
-import { icon, iconButton, toast, dialog, askText, confirmBox, friendly } from '../ui.js';
+import { icon, iconButton, toast, dialog, nameDialog, confirmBox, friendly } from '../ui.js';
 import { UNTITLED } from '../library.js';
 
 export function viewer(root, uid) {
@@ -231,18 +231,16 @@ export function viewer(root, uid) {
     if (r) r.fn();
   }
   async function rename() {
-    const t = await askText(lib.isPublic ? 'Correct name of the song' : 'Name of the song', { value: song.title === UNTITLED ? '' : song.title, label: 'Song name' });
-    if (t == null) return;
-    const s = await askText('Singer (can be left empty)', { value: song.singer, label: 'Singer' });
-    if (s == null) return;
+    const r = await nameDialog(lib, { heading: lib.isPublic ? 'Correct the name or singer' : 'Name and singer', title: song.title === UNTITLED ? '' : song.title, singer: song.singer });
+    if (!r) return;
+    const { title: t, singer: s } = r;
     try {
       if (lib.isPublic) {
-        if (!t) { toast('The song needs a name.', { error: true }); return; }
         await lib.suggestEdit(uid, t, s);
         refreshChrome(); toast('Thank you! Your change is saved here now, and reaches everyone within a few hours.', { ms: 5000 });
         return;
       }
-      await lib.updateSong(uid, (r) => { if (t) { r.title = t; if (r.titleState === 2) r.titleState = 0; } r.singer = s; }, 'Rename a song');
+      await lib.updateSong(uid, (rec) => { rec.title = t; if (rec.titleState === 2) rec.titleState = 0; rec.singer = s; }, 'Rename a song');
       refreshChrome(); toast('Saved');
     } catch (e) { toast(friendly(e), { error: true }); }
   }

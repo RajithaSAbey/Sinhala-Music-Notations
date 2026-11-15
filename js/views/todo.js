@@ -1,7 +1,7 @@
 // The To-do tab: pictures that came in without a song name. Anyone can name them; only the admin can delete.
 import { h, plural } from '../util.js';
 import { S, openSong, isAdmin, canEditSongs, go } from '../state.js';
-import { icon, toast, confirmBox, empty, friendly, chip } from '../ui.js';
+import { icon, toast, confirmBox, empty, friendly, chip, singerField } from '../ui.js';
 import { similarity } from '../phonetic.js';
 import { prefs } from '../store.js';
 import { titleFromName } from '../upload.js';
@@ -47,7 +47,8 @@ export function todoTab(root) {
     const note = h('p', { class: 'muted small', 'aria-live': 'polite' });
     const hint = h('div', { class: 'chips', 'aria-label': 'Songs with a similar name' });
     const title = h('input', { type: 'text', class: 'field', placeholder: 'Song name (as written on the picture)', 'aria-label': 'Song name', autocomplete: 'off', enterkeyhint: 'done' });
-    const singer = h('input', { type: 'text', class: 'field', placeholder: 'Singer (if you know; can be empty)', 'aria-label': 'Singer', autocomplete: 'off' });
+    const singerBox = singerField(lib, { placeholder: 'Singer (if you know; can be empty)' });
+    const singer = singerBox.input;
     const save = h('button', { class: 'btn primary', type: 'button', onclick: doSave }, 'Save and next');
     const pager = s.pages.length > 1 ? h('div', { class: 'pager' },
       h('button', { class: 'btn small', type: 'button', disabled: pageNo === 0, onclick: () => { pageNo--; draw(); } }, '‹ Earlier page'),
@@ -94,7 +95,7 @@ export function todoTab(root) {
       h('button', { class: 'todo-view', type: 'button', 'aria-label': 'Open the picture full screen', onclick: () => openSong(s.uid, [s.uid], 'To-do') }, img),
       pager,
       h('label', { class: 'lbl' }, 'What is the name of this song?'), title, hint, note,
-      h('label', { class: 'lbl' }, 'Singer (optional)'), singer,
+      h('label', { class: 'lbl' }, 'Singer (optional)'), singerBox.el,
       h('div', { class: 'row-actions' }, canEditSongs() ? save : null,
         h('button', { class: 'btn', type: 'button', onclick: () => { idx++; pageNo = 0; draw(); } }, 'Skip'),
         canEditSongs() && !flag ? h('button', { class: 'btn', type: 'button', onclick: async () => { try { await lib.setNotSong(s.uid, true); toast('Marked. The admin will check it.'); pageNo = 0; draw(); } catch (e) { toast(friendly(e), { error: true }); } } }, 'This is not a song') : null,

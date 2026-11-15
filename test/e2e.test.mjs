@@ -579,12 +579,19 @@ test('public edit: anyone can fix a name or singer (a request, shown at once her
   assert.equal(await page.getByRole('button', { name: /Edit everything/ }).count(), 0);
   await page.getByRole('button', { name: /Change the name or singer/ }).click();
   await page.getByRole('textbox', { name: 'Song name' }).fill('Seethala Gee (corrected)');
-  await page.getByRole('button', { name: 'Save' }).click();
-  await page.getByRole('textbox', { name: 'Singer' }).fill('Sunil E.');
+  // existing singers are suggested while typing, in English or Sinhala letters
+  await page.getByRole('combobox', { name: 'Singer' }).fill('nanda');
+  await page.getByRole('option', { name: /Nanda Malini/ }).waitFor();
+  await page.getByRole('combobox', { name: 'Singer' }).fill('nanda mal');
+  assert.equal(await page.getByRole('option').count(), 1);
+  await page.getByRole('combobox', { name: 'Singer' }).fill('nanda');
+  await page.getByRole('option', { name: /Nanda Malini/ }).click();
+  assert.equal(await page.getByRole('combobox', { name: 'Singer' }).inputValue(), 'Nanda Malini');
+  assert.equal(await page.getByRole('option').count(), 0, 'the list closes once a singer is chosen');
   await page.getByRole('button', { name: 'Save' }).click();
   await page.waitForFunction(() => /reaches everyone/.test(document.querySelector('#toast')?.textContent || ''));
   assert.equal(gh.edits.length, 1);
-  assert.deepEqual([gh.edits[0].title, gh.edits[0].singer], ['Seethala Gee (corrected)', 'Sunil E.']);
+  assert.deepEqual([gh.edits[0].title, gh.edits[0].singer], ['Seethala Gee (corrected)', 'Nanda Malini']);
   assert.match(gh.edits[0].uid, /^[0-9a-f-]{36}$/);
   assert.match(await page.locator('.v-title').textContent(), /corrected/);
   // it stays visible on this device after a reload and a fresh download of the public list
@@ -595,4 +602,27 @@ test('public edit: anyone can fix a name or singer (a request, shown at once her
   assert.match(await page.locator('.count').textContent(), /^1 song found/);
   assert.equal(gh.calls.length, 0, 'GitHub was never contacted');
   assert.deepEqual(page.errors, []);
+});
+
+test('the menu shows Singers first and Songs second', async () => {
+  const { gh, db } = newGitHub();
+  const page = await open(gh, { cfg: memberCfg(gh, db) });
+  await ready(page);
+  const tabs = await page.$$eval('nav.tabs .tab span', (e) => e.map((x) => x.textContent));
+  assert.deepEqual(tabs, ['Singers', 'Songs', 'Albums', 'To-do', 'Settings']);
+});
+
+test('singer suggestions also appear when a helper edits a song and names a to-do picture', async () => {
+  const { gh, db } = newGitHub();
+  const page = await open(gh, { cfg: memberCfg(gh, db) });
+  await ready(page);
+  await page.getByRole('link', { name: /To-do/ }).click();
+  await page.waitForSelector('.todo-card');
+  await page.getByRole('combobox', { name: 'Singer' }).fill('victor');
+  await page.getByRole('option', { name: /Victor Ratnayake/ }).click();
+  assert.equal(await page.getByRole('combobox', { name: 'Singer' }).inputValue(), 'Victor Ratnayake');
+  await shot(page, 'singer-suggest');
+  await page.goto(`${base}#/edit/00000000-0000-4000-8000-000000000002`);
+  await page.getByRole('combobox', { name: 'Singer' }).fill('amara');
+  await page.getByRole('option', { name: /Amaradeva/ }).first().waitFor();
 });

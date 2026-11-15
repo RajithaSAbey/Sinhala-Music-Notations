@@ -139,3 +139,6 @@ textarea.field { resize: vertical; } textarea.code { font-family: ui-monospace, 
 .v-count { min-width: 110px; text-align: center; font-weight: 600; } .v-bright { width: 120px; margin-left: 10px; }
 .v-chords { position: absolute; left: max(12px, env(safe-area-inset-left)); bottom: calc(64px + env(safe-area-inset-bottom)); z-index: 4; display: inline-flex; align-items: center; gap: 4px; padding: 9px 16px; background: var(--accent); color: var(--accent-ink); border-radius: 99px; text-decoration: none; font-weight: 700; box-shadow: var(--shadow); }
 .hide-chrome .v-chords { bottom: calc(14px + env(safe-area-inset-bottom)); }
+
+.singer-field { margin-bottom: 8px; } .singer-field .field { margin-bottom: 4px; }
+.suggest { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px; }

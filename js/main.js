@@ -19,7 +19,7 @@ let main, chip, nav, overlayRoot;
 let baseRoute = '', baseDispose = null, viewerDispose = null;
 let pausedUntil = 0;
 
-const TABS = [['songs', 'Songs', 'music'], ['singers', 'Singers', 'users'], ['albums', 'Albums', 'album'], ['todo', 'To-do', 'todo'], ['settings', 'Settings', 'settings']];
+const TABS = [['singers', 'Singers', 'users'], ['songs', 'Songs', 'music'], ['albums', 'Albums', 'album'], ['todo', 'To-do', 'todo'], ['settings', 'Settings', 'settings']];
 
 async function boot() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});

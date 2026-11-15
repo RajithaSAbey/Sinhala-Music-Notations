@@ -1,7 +1,7 @@
 // Everything about one song: name, singer, notes, pages (order, turn, add), links to chords or lyrics.
 import { h, sha256, uuid, text } from '../util.js';
 import { S, isAdmin, canEditSongs, go } from '../state.js';
-import { icon, iconButton, toast, confirmBox, friendly, empty } from '../ui.js';
+import { icon, iconButton, toast, confirmBox, friendly, empty, singerField } from '../ui.js';
 import { parseSong, plainCopy, UNTITLED } from '../library.js';
 import { pictureBytes, isImage } from '../upload.js';
 
@@ -16,7 +16,8 @@ export function editor(root, uid) {
   const urls = new Map();
 
   const title = h('input', { type: 'text', class: 'field', value: song.title === UNTITLED ? '' : song.title, 'aria-label': 'Song name', autocomplete: 'off' });
-  const singer = h('input', { type: 'text', class: 'field', value: song.singer, 'aria-label': 'Singer', autocomplete: 'off' });
+  const singerBox = singerField(lib, { value: song.singer });
+  const singer = singerBox.input;
   const notes = h('textarea', { class: 'field', rows: '3', 'aria-label': 'Notes' }, song.notes);
   const pageBox = h('div', { class: 'pages' });
   const linkBox = h('div', { class: 'links' });
@@ -25,7 +26,7 @@ export function editor(root, uid) {
 
   const el = h('section', { class: 'editor' },
     h('div', { class: 'view-head' }, iconButton('back', 'Back', () => history.back()), h('h1', {}, 'Edit song')),
-    h('label', { class: 'lbl' }, 'Song name'), title, h('label', { class: 'lbl' }, 'Singer'), singer, h('label', { class: 'lbl' }, 'Notes'), notes,
+    h('label', { class: 'lbl' }, 'Song name'), title, h('label', { class: 'lbl' }, 'Singer'), singerBox.el, h('label', { class: 'lbl' }, 'Notes'), notes,
     h('h3', { class: 'section' }, 'Pages'), pageBox,
     h('div', { class: 'row-actions' }, h('button', { class: 'btn', type: 'button', onclick: () => adder.click() }, icon('plus', 16), ' Add pictures'), adder),
     h('h3', { class: 'section' }, 'Links (chords or lyrics on the web)'), linkBox,

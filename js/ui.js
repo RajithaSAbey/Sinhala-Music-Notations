@@ -1,5 +1,6 @@
 // Shared building blocks: icons, messages, dialogs, progress screens.
 import { h } from './util.js';
+import { Index, tokens } from './phonetic.js';
 
 const PATHS = {
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
@@ -61,7 +62,7 @@ export function dialog({ title, body = [], actions = [{ label: 'OK', primary: tr
     const prev = document.activeElement;
     const close = (v) => { overlay.remove(); document.removeEventListener('keydown', onKey, true); prev?.focus?.(); resolve(v); };
     const onKey = (e) => { if (e.key === 'Escape' && dismissible) { e.stopPropagation(); close(undefined); } };
-    const buttons = actions.map((a) => h('button', { class: `btn ${a.primary ? 'primary' : ''} ${a.danger ? 'danger' : ''}`, type: 'button', onclick: () => close(a.onClick ? a.onClick() : a.value) }, a.label));
+    const buttons = actions.map((a) => h('button', { class: `btn ${a.primary ? 'primary' : ''} ${a.danger ? 'danger' : ''}`, type: 'button', onclick: () => { if (!a.onClick) return close(a.value); const v = a.onClick(); if (v !== undefined) close(v); } }, a.label));
     const box = h('div', { class: `dialog${wide ? ' wide' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, h('h2', {}, title), h('div', { class: 'dialog-body' }, typeof body === 'function' ? body(close) : body), h('div', { class: 'dialog-actions' }, buttons));
     const overlay = h('div', { class: 'overlay', onclick: (e) => { if (e.target === overlay && dismissible) close(undefined); } }, box);
     document.body.append(overlay);
@@ -123,4 +124,47 @@ export function fmtBytes(n) {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
   if (n < 1024 ** 3) return `${(n / 1024 / 1024).toFixed(0)} MB`;
   return `${(n / 1024 ** 3).toFixed(2)} GB`;
+}
+
+/**
+ * A singer name box that suggests existing singers while typing (Sinhala or English letters), so the same singer is
+ * not spelled five different ways. Tap a suggestion to use it.
+ */
+export function singerField(lib, { value = '', label = 'Singer', placeholder = 'Singer (can be left empty)', onInput } = {}) {
+  const input = h('input', { type: 'text', class: 'field', value, placeholder, 'aria-label': label, autocomplete: 'off', autocapitalize: 'words', role: 'combobox', 'aria-expanded': 'false' });
+  const list = h('div', { class: 'suggest', role: 'listbox', 'aria-label': 'Singers already in the library' });
+  let singers = null;
+  const all = () => (singers ??= lib.singers().map((s) => ({ name: s.name, count: s.songs.length, ix: new Index(s.name) })));
+  const draw = () => {
+    const q = input.value.trim();
+    const toks = tokens(q);
+    let hits = [];
+    if (toks.length) {
+      const low = q.toLowerCase();
+      hits = all().filter((s) => s.ix.matches(toks) && s.name !== q)
+        .sort((a, b) => (b.name.toLowerCase().startsWith(low) - a.name.toLowerCase().startsWith(low)) || b.count - a.count).slice(0, 6);
+    }
+    input.setAttribute('aria-expanded', String(hits.length > 0));
+    list.replaceChildren(...hits.map((s) => h('button', { class: 'chip', type: 'button', role: 'option', onclick: () => { input.value = s.name; onInput?.(s.name); draw(); input.focus(); } }, s.name, h('span', { class: 'muted small' }, ` · ${s.count}`))));
+    list.hidden = !hits.length;
+  };
+  input.addEventListener('input', () => { onInput?.(input.value); draw(); });
+  list.hidden = true;
+  return { el: h('div', { class: 'singer-field' }, input, list), input };
+}
+
+/** Name + singer in one box. Resolves { title, singer } or null. */
+export async function nameDialog(lib, { heading, title = '', singer = '', yes = 'Save', needTitle = true }) {
+  const t = h('input', { type: 'text', class: 'field', value: title, placeholder: 'Song name', 'aria-label': 'Song name', autocomplete: 'off' });
+  const sf = singerField(lib, { value: singer });
+  let out = null;
+  const ok = await dialog({
+    title: heading,
+    body: [h('label', { class: 'lbl' }, 'Song name'), t, h('label', { class: 'lbl' }, 'Singer'), sf.el],
+    actions: [{ label: 'Cancel', value: false }, { label: yes, primary: true, onClick: () => {
+      if (needTitle && !t.value.trim()) { toast('The song needs a name.', { error: true }); t.focus(); return undefined; }
+      out = { title: t.value.trim(), singer: sf.input.value.trim() }; return true;
+    } }],
+  });
+  return ok ? out : null;
 }
