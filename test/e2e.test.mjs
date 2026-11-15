@@ -227,10 +227,10 @@ test('singers tab and singer page', async () => {
   await page.getByRole('link', { name: 'Singers' }).click();
   await page.waitForSelector('.tile');
   const names = await page.$$eval('.tile-name', (e) => e.map((x) => x.textContent));
-  assert.ok(names.includes('Nanda Malini') && names.includes('Victor Ratnayake'));
+  assert.ok(names.includes('නන්දා මාලිනී') && names.includes('වික්ටර් රත්නායක'));
   await shot(page, 'singers');
-  await page.locator('.tile', { hasText: 'Nanda Malini' }).click();
-  await page.getByRole('heading', { name: 'Nanda Malini' }).waitFor();
+  await page.locator('.tile', { hasText: 'නන්දා මාලිනී' }).click();
+  await page.getByRole('heading', { name: 'නන්දා මාලිනී' }).waitFor();
   assert.ok((await rowTitles(page)).every((t) => /Kandulu|Nil Ahase/.test(t)));
   await page.locator('.view-head .iconbtn').click();
   await page.waitForSelector('.tile');
@@ -293,11 +293,11 @@ test('to-do: a member names a picture; joins an existing song of the same name; 
   assert.equal(songs.find((s) => s.uid.startsWith('11111111-0000-4000-8000-000000000000')).deleted, true);
   // new name for the next one
   await page.getByLabel('Song name', { exact: true }).fill('Brand New Tune');
-  await page.getByLabel('Singer', { exact: true }).fill('Somebody');
+  await page.getByLabel('Singer', { exact: true }).fill('nanda malini'); // English spelling is turned into the Sinhala one
   await page.getByRole('button', { name: 'Save and next' }).click();
   await page.waitForFunction(() => /1 left/.test(document.querySelector('.todo-card .muted')?.textContent || ''));
   const s2 = gh.paths(db.branch, 'notation-shelf/songs/').map((p) => JSON.parse(gh.file(db.branch, p))).find((s) => s.title === 'Brand New Tune');
-  assert.equal(s2.singer, 'Somebody'); assert.equal(s2.titleState, 0);
+  assert.equal(s2.singer, 'නන්දා මාලිනී'); assert.equal(s2.titleState, 0);
   // not a song
   await page.getByRole('button', { name: 'This is not a song' }).click();
   await page.waitForSelector('text=Nothing to do');
@@ -584,17 +584,17 @@ test('public edit: anyone can fix a name or singer (a request, shown at once her
   await page.getByRole('textbox', { name: 'Song name' }).fill('Seethala Gee (corrected)');
   // existing singers are suggested while typing, in English or Sinhala letters
   await page.getByRole('combobox', { name: 'Singer' }).fill('nanda');
-  await page.getByRole('option', { name: /Nanda Malini/ }).waitFor();
+  await page.getByRole('option', { name: /නන්දා මාලිනී/ }).waitFor();
   await page.getByRole('combobox', { name: 'Singer' }).fill('nanda mal');
   assert.equal(await page.getByRole('option').count(), 1);
   await page.getByRole('combobox', { name: 'Singer' }).fill('nanda');
-  await page.getByRole('option', { name: /Nanda Malini/ }).click();
-  assert.equal(await page.getByRole('combobox', { name: 'Singer' }).inputValue(), 'Nanda Malini');
+  await page.getByRole('option', { name: /නන්දා මාලිනී/ }).click();
+  assert.equal(await page.getByRole('combobox', { name: 'Singer' }).inputValue(), 'නන්දා මාලිනී');
   assert.equal(await page.getByRole('option').count(), 0, 'the list closes once a singer is chosen');
   await page.getByRole('button', { name: 'Save' }).click();
   await page.waitForFunction(() => /reaches everyone/.test(document.querySelector('#toast')?.textContent || ''));
   assert.equal(gh.edits.length, 1);
-  assert.deepEqual([gh.edits[0].title, gh.edits[0].singer], ['Seethala Gee (corrected)', 'Nanda Malini']);
+  assert.deepEqual([gh.edits[0].title, gh.edits[0].singer], ['Seethala Gee (corrected)', 'නන්දා මාලිනී']);
   assert.match(gh.edits[0].uid, /^[0-9a-f-]{36}$/);
   assert.match(await page.locator('.v-title').textContent(), /corrected/);
   // it stays visible on this device after a reload and a fresh download of the public list
@@ -621,13 +621,13 @@ test('singer suggestions also appear when a helper edits a song and names a to-d
   await ready(page);
   await page.getByRole('link', { name: /To-do/ }).click();
   await page.waitForSelector('.todo-card');
-  await page.getByRole('combobox', { name: 'Singer' }).fill('victor');
-  await page.getByRole('option', { name: /Victor Ratnayake/ }).click();
-  assert.equal(await page.getByRole('combobox', { name: 'Singer' }).inputValue(), 'Victor Ratnayake');
+  await page.getByRole('combobox', { name: 'Singer' }).fill('viktor');
+  await page.getByRole('option', { name: /වික්ටර් රත්නායක/ }).click();
+  assert.equal(await page.getByRole('combobox', { name: 'Singer' }).inputValue(), 'වික්ටර් රත්නායක');
   await shot(page, 'singer-suggest');
   await page.goto(`${base}#/edit/00000000-0000-4000-8000-000000000002`);
   await page.getByRole('combobox', { name: 'Singer' }).fill('amara');
-  await page.getByRole('option', { name: /Amaradeva/ }).first().waitFor();
+  await page.getByRole('option', { name: /අමරදේව/ }).first().waitFor();
 });
 
 test('public to-do: a visitor names a picture or flags it; it disappears for them at once and the request is sent', async () => {
@@ -656,10 +656,10 @@ test('public to-do: a visitor names a picture or flags it; it disappears for the
   assert.deepEqual(page.errors, []);
 });
 
-test('singer tiles are in Sinhala alphabetical order, Sinhala names first', async () => {
+test('singer tiles are in Sinhala alphabetical order', async () => {
   const { gh, db } = newGitHub();
   const snap = new Map(gh.head(db.branch).snap);
-  [['ග', 'ගුණදාස කපුගේ'], ['අ', 'අමරදේව'], ['ක', 'කරුණාරත්න දිවුල්ගනේ'], ['න', 'නන්දා මාලිනී']].forEach(([c, name], i) => {
+  [['ග', 'ගුණදාස කපුගේ'], ['ක', 'කරුණාරත්න දිවුල්ගනේ']].forEach(([c, name], i) => {
     const uid = `44444444-0000-4000-8000-00000000000${i}`;
     snap.set(`notation-shelf/songs/${uid}.json`, gh.blob(JSON.stringify({ uid, title: `Song ${c}`, singer: name, notes: '', createdAt: 5, updatedAt: 5, deleted: false, pages: [{ file: 'img-1.jpg', rotation: 0 }], links: [], titleState: 0, sourceName: '' })));
   });
@@ -669,12 +669,36 @@ test('singer tiles are in Sinhala alphabetical order, Sinhala names first', asyn
   await page.getByRole('link', { name: 'Singers' }).click();
   await page.waitForSelector('.tile');
   const names = await page.$$eval('.tile-name', (e) => e.map((x) => x.textContent));
-  // "Amaradeva" and "අමරදේව" sound the same, so they are one singer, shown in Sinhala (likewise Nanda Malini)
-  assert.deepEqual(names.slice(0, 4), ['අමරදේව', 'කරුණාරත්න දිවුල්ගනේ', 'ගුණදාස කපුගේ', 'නන්දා මාලිනී']);
-  assert.ok(!names.includes('Amaradeva') && !names.includes('Nanda Malini'));
-  const latin = names.slice(4);
-  assert.deepEqual(latin, [...latin].sort((a, b) => a.localeCompare(b)));
+  assert.deepEqual(names, ['අමරදේව', 'කරුණාරත්න දිවුල්ගනේ', 'ගුණදාස කපුගේ', 'නන්දා මාලිනී', 'වික්ටර් රත්නායක', '<b>bold</b>']);
   await shot(page, 'singers-sinhala');
+});
+
+test('singer names must be in Sinhala letters: English spelling of a known singer is converted, an unknown one is refused', async () => {
+  const { gh } = newGitHub();
+  const page = await open(gh);
+  await ready(page);
+  await searchFor(page, 'Seethala');
+  await page.locator('.songs .row-main').first().click();
+  await page.waitForSelector('.viewer .v-img[src]');
+  const rename = async (singer) => {
+    await page.getByRole('button', { name: 'More' }).click();
+    await page.getByRole('button', { name: /Change the name or singer/ }).click();
+    await page.getByRole('combobox', { name: 'Singer' }).fill(singer);
+    await page.getByRole('button', { name: 'Save' }).click();
+  };
+  await rename('Brand New Person');
+  await page.waitForFunction(() => /Sinhala letters/.test(document.querySelector('#toast')?.textContent || ''));
+  assert.equal(gh.edits.length, 0, 'nothing was sent');
+  assert.equal(await page.locator('.dialog').count(), 1, 'the box stays open so nothing typed is lost');
+  await page.getByRole('combobox', { name: 'Singer' }).fill('Amaradeva');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await page.waitForFunction(() => /reaches everyone/.test(document.querySelector('#toast')?.textContent || ''));
+  assert.equal(gh.edits.length, 1);
+  assert.equal(gh.edits[0].singer, 'අමරදේව');
+  // a Sinhala name that is new is fine
+  await rename('ගාමිණී ෆොන්සේකා');
+  await page.waitForTimeout(300);
+  assert.equal(gh.edits.at(-1).singer, 'ගාමිණී ෆොන්සේකා');
 });
 
 test('selecting text in the rename box (double-click, or dragging out of it) never closes it', async () => {

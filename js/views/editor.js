@@ -82,13 +82,15 @@ export function editor(root, uid) {
     if (!t) { toast('Please give the song a name.', { error: true }); title.focus(); return; }
     const bad = links.find((l) => l.url && !/^https?:\/\//i.test(l.url));
     if (bad) { toast('Links must start with https://', { error: true }); return; }
+    let singerName;
+    try { singerName = lib.normalizeSinger(singer.value); } catch (e) { toast(e.message, { error: true, ms: 6000 }); singer.focus(); return; }
     save.disabled = true; save.textContent = 'Saving…';
     try {
       const f = await lib.repo.fileWithSha(lib.repo.path(`songs/${uid}.json`));
       const base = f ? parseSong(text(f.bytes), f.sha) : plainCopy(lib.get(uid));
       const remoteOnly = base.pages.filter((p) => !original.has(p.file));
       const keepFiles = new Set(pages.map((p) => p.file));
-      base.title = t; base.singer = singer.value.trim(); base.notes = notes.value.trim();
+      base.title = t; base.singer = singerName; base.notes = notes.value.trim();
       base.titleState = 0;
       base.links = links.filter((l) => l.url).map((l) => ({ kind: l.kind, title: l.title || l.url, url: l.url }));
       base.pages = [...pages.map((p) => ({ file: p.file, rotation: p.rotation || 0, hash: p.hash || '' })), ...remoteOnly.filter((p) => !keepFiles.has(p.file))];

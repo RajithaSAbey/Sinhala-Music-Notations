@@ -133,7 +133,7 @@ export function fmtBytes(n) {
  * A singer name box that suggests existing singers while typing (Sinhala or English letters), so the same singer is
  * not spelled five different ways. Tap a suggestion to use it.
  */
-export function singerField(lib, { value = '', label = 'Singer', placeholder = 'Singer (can be left empty)', onInput } = {}) {
+export function singerField(lib, { value = '', label = 'Singer', placeholder = 'Singer, in Sinhala letters (can be left empty)', onInput } = {}) {
   const input = h('input', { type: 'text', class: 'field', value, placeholder, 'aria-label': label, autocomplete: 'off', autocapitalize: 'words', role: 'combobox', 'aria-expanded': 'false' });
   const list = h('div', { class: 'suggest', role: 'listbox', 'aria-label': 'Singers already in the library' });
   let singers = null;
@@ -166,7 +166,9 @@ export async function nameDialog(lib, { heading, title = '', singer = '', yes = 
     body: [h('label', { class: 'lbl' }, 'Song name'), t, h('label', { class: 'lbl' }, 'Singer'), sf.el],
     actions: [{ label: 'Cancel', value: false }, { label: yes, primary: true, onClick: () => {
       if (needTitle && !t.value.trim()) { toast('The song needs a name.', { error: true }); t.focus(); return undefined; }
-      out = { title: t.value.trim(), singer: sf.input.value.trim() }; return true;
+      let singer;
+      try { singer = lib.normalizeSinger(sf.input.value); } catch (e) { toast(e.message, { error: true, ms: 6000 }); sf.input.focus(); return undefined; }
+      out = { title: t.value.trim(), singer }; return true;
     } }],
   });
   return ok ? out : null;

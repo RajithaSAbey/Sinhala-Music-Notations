@@ -84,6 +84,7 @@ export function todoTab(root) {
     async function doSave() {
       const t = title.value.trim();
       if (t.length < 2) { toast('Please type the song name first.', { error: true }); title.focus(); return; }
+      try { singer.value = lib.normalizeSinger(singer.value); } catch (e) { toast(e.message, { error: true, ms: 6000 }); singer.focus(); return; }
       if (busyNow) return; busyNow = true; save.disabled = true; save.textContent = 'Saving…';
       try {
         if (lib.isPublic) { await lib.suggestEdit(s.uid, t, singer.value.trim()); toast('Thank you! Saved here now, and sent to everyone within a few hours.', { ms: 4500 }); } else {

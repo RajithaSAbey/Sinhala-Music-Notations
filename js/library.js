@@ -214,6 +214,7 @@ export class Library extends EventTarget {
 
   /** Visitors: asks for a new name/singer. It is applied to the database within a few hours (and can be undone by the admin). */
   async suggestEdit(uid, title, singer, { notSong = false } = {}) {
+    if (!notSong) singer = this.normalizeSinger(singer);
     let res;
     try { res = await fetch(EDIT_URL, { method: 'POST', body: JSON.stringify(notSong ? { uid, notSong: true } : { uid, title, singer }) }); } catch { throw new Error('No connection. Check your internet and try again.'); }
     if (!res.ok) {
@@ -307,6 +308,7 @@ export class Library extends EventTarget {
    * and this song is retired. Returns { song, merged }.
    */
   async nameSong(uid, title, singer = '') {
+    singer = this.normalizeSinger(singer);
     const target = this.findSame(title, uid);
     if (!target) {
       const song = await this.updateSong(uid, (r) => { r.title = title; if (singer) r.singer = singer; r.titleState = 0; }, 'Name a song');
@@ -410,6 +412,25 @@ export class Library extends EventTarget {
     return best;
   }
   /** Singers in alphabetical order: names in Sinhala letters first (Sinhala alphabet order), then names in English letters. */
+  /**
+   * Singer names are kept in Sinhala letters. English spelling is turned into the Sinhala spelling already in the library
+   * when it sounds the same ("Amaradeva" -> "අමරදේව"); otherwise it is refused with a plain message.
+   * Returns the name to save.
+   */
+  normalizeSinger(input) {
+    const name = String(input ?? '').replace(/\s+/g, ' ').trim();
+    if (!name || !/[A-Za-z]/.test(name)) return name;
+    const k = key(name).replace(/ /g, '');
+    let best = null, bestSim = 0;
+    for (const e of this.singers()) {
+      if (!hasSinhala(e.name) || /[A-Za-z]/.test(e.name)) continue;
+      const sim = similarity(name, e.name);
+      if (sim > bestSim) { best = e; bestSim = sim; }
+    }
+    if (best && (bestSim >= 0.85 || key(best.name).replace(/ /g, '') === k)) return best.name;
+    throw new Error('Please write the singer\'s name in Sinhala letters. Start typing and pick the singer from the list, or use a Sinhala keyboard.');
+  }
+
   singers() {
     const m = new Map();
     for (const s of this.live()) {

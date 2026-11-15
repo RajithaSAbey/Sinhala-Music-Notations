@@ -120,8 +120,8 @@ export function sampleDatabase(gh, { folder = 'notation-shelf', branch = 'notati
   const imgShas = [];
   pictures.forEach((buf, i) => { const name = `img-${i + 1}.jpg`; snap.set(`${folder}/images/${name}`, gh.blob(buf)); imgShas.push({ name, hash: createHash('sha256').update(buf).digest('hex') }); });
   const titles = [
-    ['සැන්දෑ වලාවන්', 'Victor Ratnayake'], ['Kandulu Gan', 'Nanda Malini'], ['මා ආදරණීය මගේ', 'Amaradeva'], ['Seethala Gee', 'Sunil Edirisinghe'], ['Nil Ahase', 'Nanda Malini'],
-    ['හිතුවක්කාරයා', 'Victor Ratnayake'], ['Sanda Eliyen', 'Amaradeva'], ['Adaraneeya Hamuwe', 'W. D. Amaradeva'],
+    ['සැන්දෑ වලාවන්', 'වික්ටර් රත්නායක'], ['Kandulu Gan', 'නන්දා මාලිනී'], ['මා ආදරණීය මගේ', 'අමරදේව'], ['Seethala Gee', 'සුනිල් එදිරිසිංහ'], ['Nil Ahase', 'නන්දා මාලිනී'],
+    ['හිතුවක්කාරයා', 'වික්ටර් රත්නායක'], ['Sanda Eliyen', 'අමරදේව'], ['Adaraneeya Hamuwe', 'ඩබ්ලිව්. ඩී. අමරදේව'],
   ];
   for (let i = 0; i < 40; i++) {
     const [t, s] = titles[i % titles.length];
