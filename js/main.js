@@ -5,6 +5,7 @@ import { Library } from './library.js';
 import { prefs, idb } from './store.js';
 import { icon, toast, dialog, busy, friendly } from './ui.js';
 import { guide } from './views/guide.js';
+import { PUBLIC_CFG } from './config.js';
 import { songsTab, singersTab, singerPage } from './views/songs.js';
 import { albumsTab, albumPage } from './views/albums.js';
 import { todoTab } from './views/todo.js';
@@ -22,13 +23,20 @@ const TABS = [['songs', 'Songs', 'music'], ['singers', 'Singers', 'users'], ['al
 
 async function boot() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
-  const cfg = prefs.get('cfg');
-  if (!cfg) { showGuide(); return; }
-  await start(cfg, { first: false });
+  S.signIn = showGuide;
+  // No database code needed to read: without one, the public library opens.
+  await start(prefs.get('cfg') || PUBLIC_CFG, { first: false });
 }
 
+/** "I have a database code": the three steps. */
 function showGuide() {
-  guide(app, async (cfg, keepAll) => { await start(cfg, { first: true, keepAll }); });
+  guide(app, async (cfg, keepAll) => {
+    await idb.clearAll();
+    location.hash = '';
+    window.removeEventListener('hashchange', route);
+    baseDispose = viewerDispose = null; baseRoute = '';
+    await start(cfg, { first: true, keepAll });
+  }, S.lib?.isPublic ? { onCancel: () => { location.reload(); } } : {});
 }
 
 async function start(cfg, { first, keepAll }) {
@@ -45,13 +53,15 @@ async function start(cfg, { first, keepAll }) {
     if (first ? keepAll : prefs.get('keepAll', false)) await downloadAll(lib, lib.live().flatMap((s) => s.pages.map((p) => p.file)));
   } else backgroundSync();
   route();
+  updateChip();
   scheduleSync();
 }
 
 function buildShell() {
+  const tabs = S.lib.isPublic ? TABS.filter(([id]) => id !== 'todo') : TABS;
   chip = h('button', { class: 'syncchip', type: 'button', onclick: () => doSync({ silent: false }) });
   main = h('main', { id: 'main', tabindex: '-1' });
-  nav = h('nav', { class: 'tabs', 'aria-label': 'Main' }, TABS.map(([id, label, ic]) => h('a', { href: `#/${id}`, 'data-tab': id, class: 'tab' }, icon(ic, 24), h('span', {}, label), id === 'todo' ? h('b', { class: 'badge', hidden: true }) : null)));
+  nav = h('nav', { class: 'tabs', 'aria-label': 'Main' }, tabs.map(([id, label, ic]) => h('a', { href: `#/${id}`, 'data-tab': id, class: 'tab' }, icon(ic, 24), h('span', {}, label), id === 'todo' ? h('b', { class: 'badge', hidden: true }) : null)));
   overlayRoot = h('div', { id: 'overlay-root' });
   app.replaceChildren(h('div', { class: 'shell' }, h('header', { class: 'topbar' }, h('div', { class: 'brand' }, icon('music', 22), h('span', {}, 'Sinhala Music Notations')), chip), main, nav), overlayRoot);
   updateChip();
@@ -66,6 +76,7 @@ async function firstDownload() {
       await lib.sync(({ phase, done, total }) => b.set(phase, done, total));
       b.close();
       if (lib.isEmpty) {
+        if (lib.isPublic) { await dialog({ title: 'The library is empty', body: [h('p', {}, 'The public library has no songs yet. Please try again later.')], dismissible: false, actions: [{ label: 'Try again', primary: true, value: true }] }); continue; }
         const again = await dialog({ title: 'The database looks empty', body: [h('p', {}, 'No songs were found. The database code may be wrong or out of date.')], dismissible: false,
           actions: [{ label: 'Use another code', value: 'other' }, { label: 'Try again', primary: true, value: 'again' }] });
         if (again === 'other') { disconnect(); return false; }
@@ -75,7 +86,7 @@ async function firstDownload() {
     } catch (e) {
       b.close();
       const r = await dialog({ title: 'Could not get the songs', body: [h('p', {}, friendly(e))], dismissible: false,
-        actions: [{ label: 'Use another code', value: 'other' }, { label: 'Try again', primary: true, value: 'again' }] });
+        actions: [...(lib.isPublic ? [] : [{ label: 'Use another code', value: 'other' }]), { label: 'Try again', primary: true, value: 'again' }] });
       if (r === 'other') { disconnect(); return false; }
     }
   }
@@ -85,7 +96,7 @@ export async function disconnect() {
   prefs.remove('cfg');
   await idb.clearAll();
   location.hash = '';
-  location.reload();
+  location.reload(); // opens the public library again
 }
 
 // ---------- keeping up to date ----------
@@ -105,7 +116,10 @@ async function doSync({ silent }) {
   } finally { S.syncing = false; updateChip(); updateBadge(); }
 }
 const backgroundSync = () => doSync({ silent: true });
+let scheduled = false;
 function scheduleSync() {
+  if (scheduled) return;
+  scheduled = true;
   const every = () => { if (document.visibilityState === 'visible' && Date.now() - (S.lib.meta.syncedAt || 0) > 4 * 60_000) backgroundSync(); };
   setInterval(every, 60_000);
   document.addEventListener('visibilitychange', every);

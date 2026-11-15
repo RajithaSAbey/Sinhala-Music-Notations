@@ -3,7 +3,7 @@ const VERSION = 'v1';
 const CACHE = `nsm-shell-${VERSION}`;
 const SHELL = [
   './', 'index.html', 'app.css', 'manifest.webmanifest',
-  'js/main.js', 'js/util.js', 'js/phonetic.js', 'js/setupcode.js', 'js/github.js', 'js/store.js', 'js/library.js', 'js/upload.js', 'js/ui.js', 'js/state.js',
+  'js/main.js', 'js/config.js', 'js/util.js', 'js/phonetic.js', 'js/setupcode.js', 'js/github.js', 'js/store.js', 'js/library.js', 'js/upload.js', 'js/ui.js', 'js/state.js',
   'js/views/guide.js', 'js/views/songs.js', 'js/views/albums.js', 'js/views/todo.js', 'js/views/add.js', 'js/views/editor.js', 'js/views/viewer.js', 'js/views/settings.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];

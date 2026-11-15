@@ -5,7 +5,7 @@ import { Repo } from '../github.js';
 import { prefs } from '../store.js';
 import { icon, friendly } from '../ui.js';
 
-export function guide(root, onDone) {
+export function guide(root, onDone, { onCancel } = {}) {
   let step = 0;
   let cfg = null;
   const el = h('div', { class: 'guide' });
@@ -17,7 +17,8 @@ export function guide(root, onDone) {
     return [h('div', { class: 'logo-big', 'aria-hidden': 'true' }, icon('music', 44)), h('h1', {}, 'Sinhala Music Notations'),
       h('p', { class: 'lead' }, 'Your shelf of song notations: find any song in seconds, read it full screen, and help keep the collection growing.'),
       h('ol', { class: 'big-steps' }, h('li', {}, h('strong', {}, '1. Get your database code. '), 'The admin sends you a long piece of text that starts with NSHELF1.'), h('li', {}, h('strong', {}, '2. Paste it here. '), 'You only do this once.'), h('li', {}, h('strong', {}, '3. Choose how to keep the pictures. '), 'Then you are ready.')),
-      h('button', { class: 'btn primary big', type: 'button', onclick: () => { step = 1; draw(); } }, 'Start')];
+      h('button', { class: 'btn primary big', type: 'button', onclick: () => { step = 1; draw(); } }, 'Start'),
+      onCancel ? h('button', { class: 'btn link', type: 'button', onclick: onCancel }, '‹ Back to the public library') : null];
   }
 
   function s2() {

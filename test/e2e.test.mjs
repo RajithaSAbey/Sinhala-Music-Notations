@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { FakeGitHub, sampleDatabase } from './fakegithub.mjs';
 import { create } from '../js/setupcode.js';
+import { PUBLIC_BASE } from '../js/config.js';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -42,13 +43,36 @@ function newGitHub() {
   const uid = '33333333-0000-4000-8000-000000000000';
   snap.set(`notation-shelf/songs/${uid}.json`, gh.blob(JSON.stringify({ uid, title: '<img src=x onerror="window.__xss=1"> Evil', singer: '<b>bold</b>', notes: '', createdAt: 1700000000500, updatedAt: 1700000000500, deleted: false, pages: [{ file: 'img-1.jpg', rotation: 0 }], links: [{ kind: 'chords', title: 'x', url: 'javascript:alert(1)' }], titleState: 0, sourceName: '' })));
   gh.commit(db.branch, snap, 'evil');
+  gh.publicSite = publicSite(gh, db);
   return { gh, db };
+}
+/** What the nightly job publishes to R2: songs that are not deleted, not in the to-do list, not marked private, with their pictures. */
+function publicSite(gh, db) {
+  const songs = [], images = new Map();
+  for (const [p, sha] of gh.head(db.branch).snap) {
+    if (!/\/songs\/[^/]+\.json$/.test(p)) continue;
+    const o = JSON.parse(gh.blobs.get(sha));
+    if (o.deleted || o.titleState === 2 || /NOT-A-SONG|KEEP-PRIVATE/.test(o.notes) || !o.pages.length) continue;
+    songs.push({ u: o.uid, t: o.title, g: o.singer, c: o.createdAt, m: o.updatedAt, p: o.pages.map((x) => [x.file, x.rotation, x.hash || '']), l: o.links });
+    for (const x of o.pages) images.set(x.file, gh.file(db.branch, `${db.folder}/images/${x.file}`));
+  }
+  return { catalog: JSON.stringify({ v: 1, generated: 1, songs }), images };
 }
 const codeFor = (gh, db, member = true) => create({ repo: gh.repo, branch: db.branch, folder: db.folder, token: gh.token, member });
 
 async function open(gh, { cfg, viewport = { width: 390, height: 844 }, scale = 1 } = {}) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: scale, acceptDownloads: true, serviceWorkers: 'allow' });
   await context.route('https://api.github.com/**', (r) => gh.handle(r));
+  const cors = { 'access-control-allow-origin': '*' };
+  await context.route(`${PUBLIC_BASE}/**`, (r) => {
+    const site = gh.publicSite;
+    const u = new URL(r.request().url());
+    if (!site) return r.fulfill({ status: 404, headers: cors, body: 'no' });
+    if (u.pathname === '/catalog.json') return r.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/json' }, body: site.catalog });
+    const m = u.pathname.match(/^\/images\/(.+)$/);
+    const img = m && site.images.get(decodeURIComponent(m[1]));
+    return img ? r.fulfill({ status: 200, headers: { ...cors, 'content-type': 'image/jpeg' }, body: img }) : r.fulfill({ status: 404, headers: cors, body: 'no' });
+  });
   const page = await context.newPage();
   page.errors = [];
   page.on('pageerror', (e) => page.errors.push(String(e)));
@@ -67,6 +91,9 @@ const rowTitles = (page) => page.$$eval('.songs .row-title', (els) => els.map((e
 test('first visit: guide, paste code, first download, then the list', async () => {
   const { gh, db } = newGitHub();
   const page = await open(gh);
+  await ready(page); // the public library opens first, without any code
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'I have a database code' }).click();
   await page.getByRole('button', { name: 'Start' }).click();
   await page.getByLabel('Database code').fill('hello');
   await page.getByRole('button', { name: 'Connect' }).click();
@@ -397,6 +424,9 @@ test('GitHub rate limit gives a plain message, not "wrong key"', async () => {
 test('a wrong key says so; a database that is not private is refused', async () => {
   const { gh, db } = newGitHub();
   const page = await open(gh);
+  await ready(page);
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'I have a database code' }).click();
   await page.getByRole('button', { name: 'Start' }).click();
   await page.getByLabel('Database code').fill(create({ repo: gh.repo, branch: db.branch, folder: db.folder, token: 'wrong', member: true }));
   await page.getByRole('button', { name: 'Connect' }).click();
@@ -453,4 +483,45 @@ test('a catalog on the web-catalog branch makes the first download quick', async
   assert.equal(await page.locator('.count').textContent(), '41 songs');
   const blobFetches = gh.calls.filter((c) => /git\/blobs\//.test(c));
   assert.equal(blobFetches.length, 0, 'no per-song downloads were needed');
+});
+
+test('public library: opens with no code, reads everything public, nothing private, never calls GitHub', async () => {
+  const { gh, db } = newGitHub();
+  const page = await open(gh, { scale: 2 });
+  await ready(page);
+  assert.equal(await page.locator('.count').textContent(), '40 songs'); // not the to-do pictures, not the one marked private
+  assert.ok(!(await rowTitles(page)).includes('Adaraneeya Hamuwe'));
+  assert.equal(await page.getByRole('link', { name: /To-do/ }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Add songs' }).count(), 0);
+  await searchFor(page, 'සැන්දෑ');
+  await page.locator('.songs .row-main', { hasText: 'සැන්දෑ වලාවන්' }).first().click();
+  await page.waitForFunction(() => document.querySelector('.v-img')?.naturalWidth > 0);
+  assert.match(await page.locator('.v-count').textContent(), /Page 1 of 2/);
+  await shot(page, 'public-viewer');
+  await page.keyboard.press('Escape');
+  await page.goto(`${base}#/add`);
+  await page.getByText('Adding songs needs a helper code').waitFor();
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await shot(page, 'public-settings');
+  assert.equal(gh.calls.length, 0, 'GitHub was never contacted');
+  assert.deepEqual(page.errors, []);
+});
+
+test('public library: a hidden copy is removed when the song is no longer public', async () => {
+  const { gh, db } = newGitHub();
+  const page = await open(gh);
+  await ready(page);
+  const old = gh.publicSite;
+  const c = JSON.parse(old.catalog); c.songs = c.songs.slice(0, 5); c.generated = 2;
+  gh.publicSite = { catalog: JSON.stringify(c), images: old.images };
+  await page.locator('.syncchip').click();
+  await page.waitForFunction(() => document.querySelector('.count').textContent === '5 songs');
+});
+
+test('public library: not published yet gives a plain message', async () => {
+  const { gh } = newGitHub();
+  gh.publicSite = null;
+  const page = await open(gh);
+  await page.getByText('Could not get the songs').waitFor();
+  assert.match(await page.locator('.dialog').textContent(), /not published yet/);
 });

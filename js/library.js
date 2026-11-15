@@ -3,6 +3,7 @@ import { Repo } from './github.js';
 import { idb, prefs, pictures } from './store.js';
 import { Index, tokens, key, similarity, same } from './phonetic.js';
 import { text, utf8, gitBlobSha, uuid, sleep, RateLimited, PermanentError } from './util.js';
+import { PUBLIC_BASE } from './config.js';
 
 export const NOT_A_SONG = 'NOT-A-SONG';
 export const UNTITLED = 'Untitled';
@@ -48,7 +49,8 @@ export class Library extends EventTarget {
   constructor(cfg) {
     super();
     this.cfg = cfg; // { repo, branch, folder, token, role }
-    this.repo = new Repo(cfg);
+    this.isPublic = cfg.role === 'public';
+    this.repo = this.isPublic ? null : new Repo(cfg);
     this.songs = new Map();
     this.albumList = [];
     this.meta = {};
@@ -58,7 +60,7 @@ export class Library extends EventTarget {
 
   get role() { return this.cfg.role; }
   get isAdmin() { return this.cfg.role === 'admin'; }
-  get canAdd() { return this.cfg.role !== 'reader'; }
+  get canAdd() { return this.cfg.role === 'admin' || this.cfg.role === 'member'; }
   changed(what = 'songs') { this.dispatchEvent(new CustomEvent('change', { detail: what })); }
 
   // ---------- loading ----------
@@ -67,7 +69,7 @@ export class Library extends EventTarget {
     this.songs.clear();
     for (const r of rows) this.songs.set(r.uid, prep(r));
     this.meta = meta && meta.repo === this.cfg.repo && meta.branch === this.cfg.branch && meta.folder === this.cfg.folder ? meta : {};
-    if (!this.meta.repo) { this.songs.clear(); }
+    if (!this.meta.repo) { this.songs.clear(); if (rows.length) await idb.clearSongs(); }
     this.albumList = this.isAdmin ? (await idb.getMeta('albums')) || [] : prefs.get('albums.local', []);
     this.reindex();
   }
@@ -95,6 +97,7 @@ export class Library extends EventTarget {
    * Only changed songs are downloaded: GitHub tells us each song file's id, and we compare with what we have.
    */
   async sync(onProgress = () => {}) {
+    if (this.isPublic) return this.syncPublic(onProgress);
     const repo = this.repo;
     onProgress({ phase: 'Checking the database…', done: 0, total: 0 });
     const head = await repo.head();
@@ -170,6 +173,28 @@ export class Library extends EventTarget {
     return { total, failed: failed.length };
   }
 
+  /** The public library: one search-list file for everything (no key, no limits). */
+  async syncPublic(onProgress) {
+    onProgress({ phase: 'Getting the song list…', done: 0, total: 0 });
+    let res;
+    try { res = await fetch(`${PUBLIC_BASE}/catalog.json`, { cache: 'no-cache' }); } catch { throw new Error('No connection. Check your internet and try again.'); }
+    if (!res.ok) throw new PermanentError(res.status === 404 ? 'The public library is not published yet. Please try again later.' : `The public library could not be loaded (${res.status}).`);
+    const cat = await res.json();
+    if (cat.v !== 1 || !Array.isArray(cat.songs)) throw new PermanentError('The public library has an unexpected format.');
+    const fresh = new Map();
+    for (const c of cat.songs) {
+      const s = parseSong({ uid: c.u, title: c.t, singer: c.g, notes: '', createdAt: c.c, updatedAt: c.m, deleted: false, pages: (c.p || []).map(([file, rotation, hash]) => ({ file, rotation, hash })), links: c.l || [], titleState: 0, sourceName: '' }, '');
+      if (s.pages.length) fresh.set(s.uid, prep(s));
+    }
+    this.songs = fresh;
+    await idb.clearSongs(); await idb.putSongs([...fresh.values()]);
+    this.reindex();
+    this.meta.commit = String(cat.generated || 1); this.meta.syncedAt = Date.now();
+    await this.saveMeta();
+    this.changed('songs');
+    return { total: fresh.size, failed: 0 };
+  }
+
   /** The search list the nightly job prepares (branch web-catalog): all songs in one download. uid -> song */
   async loadCatalog() {
     const bytes = await this.repo.fileBytes('catalog.json', { ref: 'web-catalog' });
@@ -194,7 +219,12 @@ export class Library extends EventTarget {
     if (have) { if (keep) pictures.pin(file, true); return have; }
     if (this.images.has(file)) return this.images.get(file);
     const p = (async () => {
-      const bytes = await this.repo.fileBytes(this.repo.path(`images/${file}`), { cache: 'force-cache' });
+      let bytes;
+      if (this.isPublic) {
+        let r;
+        try { r = await fetch(`${PUBLIC_BASE}/images/${encodeURIComponent(file)}`, { cache: 'force-cache' }); } catch { throw new Error('No connection. Check your internet and try again.'); }
+        bytes = r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
+      } else bytes = await this.repo.fileBytes(this.repo.path(`images/${file}`), { cache: 'force-cache' });
       if (!bytes) throw new PermanentError('This picture is missing from the database.');
       const type = /\.png$/i.test(file) ? 'image/png' : /\.webp$/i.test(file) ? 'image/webp' : 'image/jpeg';
       const blob = new Blob([bytes], { type });

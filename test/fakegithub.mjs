@@ -131,7 +131,7 @@ export function sampleDatabase(gh, { folder = 'notation-shelf', branch = 'notati
     const pages = [{ file: pg.name, rotation: 0, ...(i % 3 ? { hash: pg.hash } : {}) }];
     if (i % 5 === 0) pages.push({ file: imgShas[(i + 1) % imgShas.length].name, rotation: 0 });
     const links = i === 0 ? [{ kind: 'chords', title: 'Chords', url: 'https://example.com/chords' }] : [];
-    snap.set(`${folder}/songs/${uid}.json`, gh.blob(JSON.stringify({ uid, title, singer: i % 4 === 3 ? '' : s, notes: '', createdAt: 1700000000000 + i * 1000, updatedAt: 1700000000000 + i * 1000, deleted: false, pages, links, titleState: 0, sourceName: '' }, null, 2)));
+    snap.set(`${folder}/songs/${uid}.json`, gh.blob(JSON.stringify({ uid, title, singer: i % 4 === 3 ? '' : s, notes: i === 7 ? 'KEEP-PRIVATE' : '', createdAt: 1700000000000 + i * 1000, updatedAt: 1700000000000 + i * 1000, deleted: false, pages, links, titleState: 0, sourceName: '' }, null, 2)));
   }
   for (let i = 0; i < 4; i++) {
     const uid = `11111111-0000-4000-8000-${String(i).padStart(12, '0')}`;

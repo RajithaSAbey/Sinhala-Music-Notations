@@ -10,7 +10,9 @@ export function addView(root) {
   const el = h('section', { class: 'add' }, h('div', { class: 'view-head' }, iconButton('back', 'Back', () => history.back()), h('h1', {}, 'Add songs')));
   root.append(el);
   if (!canEditSongs()) {
-    el.append(empty('This device can only read', 'Ask the admin for a new database code if you would like to add songs.'));
+    el.append(lib.isPublic
+      ? empty('Adding songs needs a helper code', 'Reading is open to everyone. To add songs or name pictures, ask the admin for a database code.', h('button', { class: 'btn primary', type: 'button', onclick: () => S.signIn() }, 'I have a database code'))
+      : empty('This device can only read', 'Ask the admin for a new database code if you would like to add songs.'));
     return () => el.remove();
   }
   let running = false;

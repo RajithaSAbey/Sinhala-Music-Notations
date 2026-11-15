@@ -12,22 +12,22 @@ export function settingsView(root, { syncNow, disconnect }) {
   const usage = h('p', { class: 'muted' }, 'Counting…');
   const el = h('section', { class: 'settings' }, h('div', { class: 'view-head' }, h('h1', {}, 'Settings')));
   root.append(el);
-  const role = { admin: 'Admin: you can do everything', member: 'Helper: you can add songs and name pictures', reader: 'Reader: you can look at songs (adding is switched off)' }[lib.role];
+  const role = lib.isPublic ? 'Public library: you can read every song. Adding songs needs a helper code from the admin.' : { admin: 'Admin: you can do everything', member: 'Helper: you can add songs and name pictures', reader: 'Reader: you can look at songs (adding is switched off)' }[lib.role];
   const group = (title, ...kids) => h('div', { class: 'group' }, h('h3', {}, title), ...kids);
   const row = (label, hint, action) => h('div', { class: 'srow' }, h('div', {}, h('strong', {}, label), hint ? h('div', { class: 'muted small' }, hint) : null), action);
   const btn = (label, fn, cls = '') => h('button', { class: `btn ${cls}`, type: 'button', onclick: fn }, label);
 
-  el.append(
-    group('Your database', h('p', {}, role), h('p', { class: 'muted' }, `${plural(lib.live().length, 'song')} · last checked ${ago(lib.meta.syncedAt)}`), btn('Check for new songs now', syncNow, 'primary')),
+  el.append(...[
+    group(lib.isPublic ? 'The public library' : 'Your database', h('p', {}, role), h('p', { class: 'muted' }, `${plural(lib.live().length, 'song')} · last checked ${ago(lib.meta.syncedAt)}`), btn('Check for new songs now', syncNow, 'primary'), lib.isPublic ? btn('I have a database code', () => S.signIn()) : null),
     group('Pictures on this device', usage,
       btn('Save every picture for use without internet', saveAll),
       btn('Remove the saved pictures', async () => { if (await confirmBox('Remove saved pictures?', 'They are only removed from this device. You can load them again whenever you open a song.', { yes: 'Remove' })) { await pictures.clear(); await showUsage(); toast('Removed'); } })),
     isAdmin() ? group('Share with helpers', h('p', { class: 'muted' }, 'Helpers can add songs and name pictures, but cannot delete anything. Send them this code, and tell them to keep it private.'), btn('Copy the helper code', copyHelper)) : null,
-    group('Help and feedback', btn('Send a message to the admin', () => go('#/feedback')), btn('How to use this app and add it to your home screen', () => go('#/help'))),
-    group('This device', btn('Disconnect from the database', async () => {
+    group('Help and feedback', lib.isPublic ? null : btn('Send a message to the admin', () => go('#/feedback')), btn('How to use this app and add it to your home screen', () => go('#/help'))),
+    lib.isPublic ? null : group('This device', btn('Disconnect from the database', async () => {
       if (await confirmBox('Disconnect?', 'This forgets the database code and removes the songs and pictures saved on this device. The database itself is not touched. You will need the code again to reconnect.', { yes: 'Disconnect', danger: true })) disconnect();
     }, 'danger')),
-    h('p', { class: 'muted small center' }, `Sinhala Music Notations ${VERSION}`));
+    h('p', { class: 'muted small center' }, `Sinhala Music Notations ${VERSION}`)].filter(Boolean));
 
   async function showUsage() {
     const u = await pictures.usage();

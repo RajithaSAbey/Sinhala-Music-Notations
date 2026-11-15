@@ -8,6 +8,8 @@ export const S = {
   ctx: null,
   syncing: false,
   lastError: '',
+  /** Set by main.js: opens the 'I have a database code' steps. */
+  signIn: null,
 };
 
 export const favs = {
