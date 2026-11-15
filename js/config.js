@@ -4,3 +4,4 @@ export const PUBLIC_CFG = { repo: 'public', branch: '', folder: '', token: '', r
 
 // Where the public web app sends pictures (a Cloudflare Worker that can only add pictures to a private intake).
 export const UPLOAD_URL = 'https://intake.sinhala-music.workers.dev/upload';
+export const EDIT_URL = UPLOAD_URL.replace(/\/upload$/, '/edit');

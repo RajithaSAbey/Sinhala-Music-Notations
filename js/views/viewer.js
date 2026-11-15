@@ -218,6 +218,7 @@ export function viewer(root, uid) {
   async function menu() {
     const items = [];
     const add = (label, fn, danger = false) => items.push({ label, fn, danger });
+    if (lib.isPublic) add('Change the name or singer…', rename);
     if (canEditSongs()) { add('Change the name or singer…', rename); add('Edit everything about this song…', () => go(`#/edit/${uid}`)); add('Turn this page', rotate); }
     add('Add to an album…', addToAlbum);
     add('Share this song', share);
@@ -230,11 +231,17 @@ export function viewer(root, uid) {
     if (r) r.fn();
   }
   async function rename() {
-    const t = await askText('Name of the song', { value: song.title === UNTITLED ? '' : song.title, label: 'Song name' });
+    const t = await askText(lib.isPublic ? 'Correct name of the song' : 'Name of the song', { value: song.title === UNTITLED ? '' : song.title, label: 'Song name' });
     if (t == null) return;
     const s = await askText('Singer (can be left empty)', { value: song.singer, label: 'Singer' });
     if (s == null) return;
     try {
+      if (lib.isPublic) {
+        if (!t) { toast('The song needs a name.', { error: true }); return; }
+        await lib.suggestEdit(uid, t, s);
+        refreshChrome(); toast('Thank you! Your change is saved here now, and reaches everyone within a few hours.', { ms: 5000 });
+        return;
+      }
       await lib.updateSong(uid, (r) => { if (t) { r.title = t; if (r.titleState === 2) r.titleState = 0; } r.singer = s; }, 'Rename a song');
       refreshChrome(); toast('Saved');
     } catch (e) { toast(friendly(e), { error: true }); }

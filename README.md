@@ -24,7 +24,9 @@ Anyone who opens the page without a database code gets the **public library**: a
 or marked `NOT-A-SONG` / `KEEP-PRIVATE` in their notes are not included, and notes are never published.
 
 Anyone may also **send pictures or PDFs** (they never touch GitHub): `worker/intake.js` is a Cloudflare Worker that only accepts JPEGs from this site,
-rate-limits each visitor, and drops them in a private bucket. Every few hours `import-public-uploads.yml` (in `REST`) turns them into new
+rate-limits each visitor, and drops them in a private bucket. Visitors can also ask to change a song's **name or singer** (never delete):
+the request waits in the same bucket and the import job applies it (web addresses refused, per-visitor and per-run limits, and every change is recorded in
+`private/public-edits.json` with the old and new value so it can be undone). Every few hours `import-public-uploads.yml` (in `REST`) turns them into new
 songs in the To-do list. They cannot change or delete anything, and they stay out of the public library until a helper or the admin names them.
 Deploy the worker with `CLOUDFLARE_API_TOKEN=… worker/deploy.sh`.
 

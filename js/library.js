@@ -3,7 +3,7 @@ import { Repo } from './github.js';
 import { idb, prefs, pictures } from './store.js';
 import { Index, tokens, key, similarity, same } from './phonetic.js';
 import { text, utf8, gitBlobSha, uuid, sleep, RateLimited, PermanentError } from './util.js';
-import { PUBLIC_BASE } from './config.js';
+import { PUBLIC_BASE, EDIT_URL } from './config.js';
 
 export const NOT_A_SONG = 'NOT-A-SONG';
 export const UNTITLED = 'Untitled';
@@ -186,6 +186,7 @@ export class Library extends EventTarget {
       const s = parseSong({ uid: c.u, title: c.t, singer: c.g, notes: '', createdAt: c.c, updatedAt: c.m, deleted: false, pages: (c.p || []).map(([file, rotation, hash]) => ({ file, rotation, hash })), links: c.l || [], titleState: 0, sourceName: '' }, '');
       if (s.pages.length) fresh.set(s.uid, prep(s));
     }
+    this.applyPublicEdits(fresh);
     this.songs = fresh;
     await idb.clearSongs(); await idb.putSongs([...fresh.values()]);
     this.reindex();
@@ -193,6 +194,35 @@ export class Library extends EventTarget {
     await this.saveMeta();
     this.changed('songs');
     return { total: fresh.size, failed: 0 };
+  }
+
+  /** Name/singer changes this visitor sent are shown at once on this device, until the public list catches up. */
+  applyPublicEdits(map = this.songs) {
+    const edits = prefs.get('pubEdits', {});
+    let dirty = false;
+    for (const [uid, e] of Object.entries(edits)) {
+      const s = map.get(uid);
+      if (!s || Date.now() - e.at > 4 * 86400_000 || (s.title === e.title && s.singer === e.singer && e.seen)) { delete edits[uid]; dirty = true; continue; }
+      if (s.title === e.title && s.singer === e.singer) { e.seen = true; dirty = true; }
+      s.title = e.title; s.singer = e.singer; prep(s);
+    }
+    if (dirty) prefs.set('pubEdits', edits);
+  }
+
+  /** Visitors: asks for a new name/singer. It is applied to the database within a few hours (and can be undone by the admin). */
+  async suggestEdit(uid, title, singer) {
+    let res;
+    try { res = await fetch(EDIT_URL, { method: 'POST', body: JSON.stringify({ uid, title, singer }) }); } catch { throw new Error('No connection. Check your internet and try again.'); }
+    if (!res.ok) {
+      let msg = '';
+      try { msg = (await res.json()).error; } catch { /* no details */ }
+      throw new Error(res.status === 429 ? 'Too many changes at once. Please wait a minute and try again.' : msg || 'The change could not be sent. Please try again.');
+    }
+    const edits = prefs.get('pubEdits', {});
+    edits[uid] = { title: title.trim(), singer: singer.trim(), at: Date.now() };
+    prefs.set('pubEdits', edits);
+    const s = this.songs.get(uid);
+    if (s) { s.title = title.trim(); s.singer = singer.trim(); prep(s); await idb.putSongs([s]); this.changed('songs'); }
   }
 
   /** The search list the nightly job prepares (branch web-catalog): all songs in one download. uid -> song */

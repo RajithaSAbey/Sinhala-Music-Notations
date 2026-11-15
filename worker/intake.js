@@ -1,6 +1,7 @@
 // Cloudflare Worker: takes pictures from the public web app and puts them in a PRIVATE bucket (the "intake").
 // It can only add; it cannot read, list-to-the-public, change or delete anything in the library.
-// A scheduled job in the REST repository later turns what arrives here into songs waiting in the To-do tab.
+// A scheduled job in the REST repository later turns what arrives here into songs waiting in the To-do tab,
+// and applies name/singer changes (never deletes).
 
 const ALLOWED_ORIGINS = ['https://rajithasabey.github.io'];
 const MAX_BYTES = 15 * 1024 * 1024;
@@ -8,6 +9,25 @@ const MIN_BYTES = 2000;
 const GROUP = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const json = (status, body, headers = {}) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
+
+const clean = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+const SPAM = /https?:|www\.|\.(com|net|org|lk|info|xyz)\b|@/i;
+
+/** A new name and/or singer for a song. It is only a request: the import job checks and applies it later. */
+async function edit(req, env, cors, ip) {
+  let body;
+  try { body = JSON.parse(await req.text()); } catch { return json(400, { error: 'Bad request.' }, cors); }
+  const uid = String(body?.uid ?? '');
+  const title = clean(body?.title, 200), singer = clean(body?.singer, 200);
+  if (!GROUP.test(uid)) return json(400, { error: 'Bad request.' }, cors);
+  if (!title) return json(400, { error: 'The song needs a name.' }, cors);
+  if (SPAM.test(title) || SPAM.test(singer)) return json(400, { error: 'Web addresses are not allowed in a name.' }, cors);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${ip}|${env.SALT || 'salt'}`)));
+  const who = [...digest.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const key = `edits/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.json`;
+  await env.INTAKE.put(key, JSON.stringify({ uid, title, singer, at: Date.now() }), { httpMetadata: { contentType: 'application/json' }, customMetadata: { who } });
+  return json(200, { ok: true }, cors);
+}
 
 export default {
   async fetch(req, env) {
@@ -18,7 +38,7 @@ export default {
 
     if (req.method === 'OPTIONS') return new Response(null, { status: allowed ? 204 : 403, headers: cors });
     if (url.pathname === '/' && req.method === 'GET') return new Response('Sinhala Music Notations: intake is running.', { headers: { 'content-type': 'text/plain' } });
-    if (url.pathname !== '/upload' || req.method !== 'POST') return json(404, { error: 'not found' }, cors);
+    if ((url.pathname !== '/upload' && url.pathname !== '/edit') || req.method !== 'POST') return json(404, { error: 'not found' }, cors);
     if (!allowed) return json(403, { error: 'This address may not send pictures.' }, cors);
     if (env.ACCEPTING === 'no') return json(503, { error: 'Uploads are paused for now. Please try again later.' }, cors);
 
@@ -27,6 +47,8 @@ export default {
       const { success } = await env.LIMITER.limit({ key: ip });
       if (!success) return json(429, { error: 'Too many pictures at once. Waiting a minute, then continuing.' }, { ...cors, 'retry-after': '30' });
     }
+
+    if (url.pathname === '/edit') return edit(req, env, cors, ip);
 
     const group = req.headers.get('x-group') || '';
     const index = Number(req.headers.get('x-index'));

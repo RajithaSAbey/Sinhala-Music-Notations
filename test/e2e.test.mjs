@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { FakeGitHub, sampleDatabase } from './fakegithub.mjs';
 import { create } from '../js/setupcode.js';
-import { PUBLIC_BASE, UPLOAD_URL } from '../js/config.js';
+import { PUBLIC_BASE, UPLOAD_URL, EDIT_URL } from '../js/config.js';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -65,8 +65,17 @@ async function open(gh, { cfg, viewport = { width: 390, height: 844 }, scale = 1
   await context.route('https://api.github.com/**', (r) => gh.handle(r));
   const cors = { 'access-control-allow-origin': '*' };
   gh.intake ??= [];
+  gh.edits ??= [];
+  await context.route(EDIT_URL, async (r) => {
+    const req = r.request();
+    const h = { ...cors, 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' };
+    if (req.method() === 'OPTIONS') return r.fulfill({ status: 204, headers: h });
+    gh.edits.push(JSON.parse(req.postData()));
+    return r.fulfill({ status: 200, headers: { ...h, 'content-type': 'application/json' }, body: '{"ok":true}' });
+  });
   await context.route(`${new URL(UPLOAD_URL).origin}/**`, async (r) => {
     const req = r.request();
+    if (req.url() === EDIT_URL) return r.fallback();
     const h = { ...cors, 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' };
     if (req.method() === 'OPTIONS') return r.fulfill({ status: 204, headers: h });
     if (gh.intakeLimitOnce) { gh.intakeLimitOnce = false; return r.fulfill({ status: 429, headers: { ...h, 'retry-after': '1' }, body: JSON.stringify({ error: 'slow down' }) }); }
@@ -554,6 +563,36 @@ test('public upload: anyone can send pictures and PDFs; repeats are skipped; the
   assert.deepEqual(pdf.map((x) => [x.index, x.pages]), [[0, 3], [1, 3], [2, 3]]);
   assert.equal(new Set(pdf.map((x) => x.group)).size, 1);
   assert.ok(gh.intake.every((x) => x.bytes[0] === 0xff && x.bytes[1] === 0xd8));
+  assert.equal(gh.calls.length, 0, 'GitHub was never contacted');
+  assert.deepEqual(page.errors, []);
+});
+
+test('public edit: anyone can fix a name or singer (a request, shown at once here); there is no delete', async () => {
+  const { gh } = newGitHub();
+  const page = await open(gh);
+  await ready(page);
+  await searchFor(page, 'Seethala');
+  await page.locator('.songs .row-main').first().click();
+  await page.waitForSelector('.viewer .v-img[src]');
+  await page.getByRole('button', { name: 'More' }).click();
+  assert.equal(await page.getByRole('button', { name: /Delete/ }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: /Edit everything/ }).count(), 0);
+  await page.getByRole('button', { name: /Change the name or singer/ }).click();
+  await page.getByRole('textbox', { name: 'Song name' }).fill('Seethala Gee (corrected)');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('textbox', { name: 'Singer' }).fill('Sunil E.');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await page.waitForFunction(() => /reaches everyone/.test(document.querySelector('#toast')?.textContent || ''));
+  assert.equal(gh.edits.length, 1);
+  assert.deepEqual([gh.edits[0].title, gh.edits[0].singer], ['Seethala Gee (corrected)', 'Sunil E.']);
+  assert.match(gh.edits[0].uid, /^[0-9a-f-]{36}$/);
+  assert.match(await page.locator('.v-title').textContent(), /corrected/);
+  // it stays visible on this device after a reload and a fresh download of the public list
+  await page.goto(`${base}#/songs`);
+  await page.reload();
+  await ready(page);
+  await searchFor(page, 'corrected');
+  assert.match(await page.locator('.count').textContent(), /^1 song found/);
   assert.equal(gh.calls.length, 0, 'GitHub was never contacted');
   assert.deepEqual(page.errors, []);
 });
