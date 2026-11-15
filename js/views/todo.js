@@ -1,6 +1,7 @@
 // The To-do tab: pictures that came in without a song name. Anyone can name them; only the admin can delete.
 import { h, plural } from '../util.js';
 import { S, openSong, isAdmin, canEditSongs, go } from '../state.js';
+const canHelp = () => canEditSongs() || S.lib?.isPublic;
 import { icon, toast, confirmBox, empty, friendly, chip, singerField } from '../ui.js';
 import { similarity } from '../phonetic.js';
 import { prefs } from '../store.js';
@@ -27,9 +28,10 @@ export function todoTab(root) {
       h('div', {},
         h('p', {}, h('strong', {}, 'Why? '), 'These pictures were added without a song name. Until someone names them, nobody can find them by searching.'),
         h('ol', {}, h('li', {}, 'Look at the picture. The song name is usually written at the top.'), h('li', {}, 'Type the name in the box. English or Sinhala letters are both fine.'), h('li', {}, 'Press “Save and next”. That is all.')),
-        h('p', {}, 'If the picture is not a song (a photo, a blank page, or only words), press “This is not a song”. The admin will check it. If you are not sure, press “Skip”.'))));
+        h('p', {}, 'If the picture is not a song (a photo, a blank page, or only words), press “This is not a song”. The admin will check it. If you are not sure, press “Skip”.'),
+        S.lib.isPublic ? h('p', { class: 'muted' }, 'Thank you for helping! Your name shows here at once, and reaches everyone within a few hours.') : null)));
     prefs.set('todoHelpSeen', true);
-    if (!canEditSongs()) { el.append(empty('You can look, but not change', 'Ask the admin for a new database code if you want to help name these pictures.')); }
+    if (!canHelp()) { el.append(empty('You can look, but not change', 'Ask the admin for a new database code if you want to help name these pictures.')); }
     if (!q.length) {
       el.append(empty('Nothing to do. Thank you!', flagged.length && !isAdmin() ? `${plural(flagged.length, 'picture')} you marked are waiting for the admin.` : 'Every picture has a name.'));
     } else {
@@ -84,8 +86,10 @@ export function todoTab(root) {
       if (t.length < 2) { toast('Please type the song name first.', { error: true }); title.focus(); return; }
       if (busyNow) return; busyNow = true; save.disabled = true; save.textContent = 'Saving…';
       try {
-        const r = await lib.nameSong(s.uid, t, singer.value.trim());
-        toast(r.merged ? 'Saved. Added to the song that was already there.' : 'Saved. Thank you!');
+        if (lib.isPublic) { await lib.suggestEdit(s.uid, t, singer.value.trim()); toast('Thank you! Saved here now, and sent to everyone within a few hours.', { ms: 4500 }); } else {
+          const r = await lib.nameSong(s.uid, t, singer.value.trim());
+          toast(r.merged ? 'Saved. Added to the song that was already there.' : 'Saved. Thank you!');
+        }
         pageNo = 0; draw();
       } catch (e) { toast(friendly(e), { error: true }); save.disabled = false; save.textContent = 'Save and next'; } finally { busyNow = false; }
     }
@@ -96,9 +100,9 @@ export function todoTab(root) {
       pager,
       h('label', { class: 'lbl' }, 'What is the name of this song?'), title, hint, note,
       h('label', { class: 'lbl' }, 'Singer (optional)'), singerBox.el,
-      h('div', { class: 'row-actions' }, canEditSongs() ? save : null,
+      h('div', { class: 'row-actions' }, canHelp() ? save : null,
         h('button', { class: 'btn', type: 'button', onclick: () => { idx++; pageNo = 0; draw(); } }, 'Skip'),
-        canEditSongs() && !flag ? h('button', { class: 'btn', type: 'button', onclick: async () => { try { await lib.setNotSong(s.uid, true); toast('Marked. The admin will check it.'); pageNo = 0; draw(); } catch (e) { toast(friendly(e), { error: true }); } } }, 'This is not a song') : null,
+        canHelp() && !flag ? h('button', { class: 'btn', type: 'button', onclick: async () => { try { if (lib.isPublic) await lib.suggestEdit(s.uid, '', '', { notSong: true }); else await lib.setNotSong(s.uid, true); toast('Marked. The admin will check it.'); pageNo = 0; draw(); } catch (e) { toast(friendly(e), { error: true }); } } }, 'This is not a song') : null,
         canEditSongs() && flag ? h('button', { class: 'btn', type: 'button', onclick: async () => { await lib.setNotSong(s.uid, false); draw(); } }, 'It is a song after all') : null,
         isAdmin() ? h('button', { class: 'btn danger', type: 'button', onclick: async () => { if (await confirmBox('Delete this picture?', 'It will be removed from the database for everyone.', { yes: 'Delete', danger: true })) { try { await lib.deleteSong(s.uid); toast('Deleted'); pageNo = 0; draw(); } catch (e) { toast(friendly(e), { error: true }); } } } }, icon('trash', 16), ' Delete') : null));
   }

@@ -52,8 +52,8 @@ function publicSite(gh, db) {
   for (const [p, sha] of gh.head(db.branch).snap) {
     if (!/\/songs\/[^/]+\.json$/.test(p)) continue;
     const o = JSON.parse(gh.blobs.get(sha));
-    if (o.deleted || o.titleState === 2 || /NOT-A-SONG|KEEP-PRIVATE/.test(o.notes) || !o.pages.length) continue;
-    songs.push({ u: o.uid, t: o.title, g: o.singer, c: o.createdAt, m: o.updatedAt, p: o.pages.map((x) => [x.file, x.rotation, x.hash || '']), l: o.links });
+    if (o.deleted || /NOT-A-SONG|KEEP-PRIVATE/.test(o.notes) || !o.pages.length) continue;
+    songs.push({ u: o.uid, t: o.title, g: o.singer, c: o.createdAt, m: o.updatedAt, p: o.pages.map((x) => [x.file, x.rotation, x.hash || '']), l: o.links, ...(o.titleState === 2 ? { x: 2, o: o.sourceName } : {}) });
     for (const x of o.pages) images.set(x.file, gh.file(db.branch, `${db.folder}/images/${x.file}`));
   }
   return { catalog: JSON.stringify({ v: 1, generated: 1, songs }), images };
@@ -508,9 +508,10 @@ test('public library: opens with no code, reads everything public, nothing priva
   const { gh, db } = newGitHub();
   const page = await open(gh, { scale: 2 });
   await ready(page);
-  assert.equal(await page.locator('.count').textContent(), '40 songs'); // not the to-do pictures, not the one marked private
+  assert.equal(await page.locator('.count').textContent(), '40 songs'); // pictures still waiting for a name are not in the song list; the one marked private is not published
   assert.ok(!(await rowTitles(page)).includes('Adaraneeya Hamuwe'));
-  assert.equal(await page.getByRole('link', { name: /To-do/ }).count(), 0);
+  assert.equal(await page.getByRole('link', { name: /To-do/ }).count(), 1); // visitors may help name pictures too
+  assert.equal(await page.locator('.badge').textContent(), '3');
   assert.equal(await page.getByRole('button', { name: 'Add songs' }).count(), 1); // anyone may send pictures
   await searchFor(page, 'සැන්දෑ');
   await page.locator('.songs .row-main', { hasText: 'සැන්දෑ වලාවන්' }).first().click();
@@ -625,4 +626,51 @@ test('singer suggestions also appear when a helper edits a song and names a to-d
   await page.goto(`${base}#/edit/00000000-0000-4000-8000-000000000002`);
   await page.getByRole('combobox', { name: 'Singer' }).fill('amara');
   await page.getByRole('option', { name: /Amaradeva/ }).first().waitFor();
+});
+
+test('public to-do: a visitor names a picture or flags it; it disappears for them at once and the request is sent', async () => {
+  const { gh } = newGitHub();
+  const page = await open(gh);
+  await ready(page);
+  await page.getByRole('link', { name: /To-do/ }).click();
+  await page.waitForSelector('.todo-card');
+  assert.match(await page.locator('.todo-card .muted').first().textContent(), /3 left/);
+  assert.equal(await page.getByRole('button', { name: /Delete/ }).count(), 0);
+  await page.waitForFunction(() => document.querySelector('.todo-img')?.naturalWidth > 0);
+  await page.getByRole('textbox', { name: 'Song name' }).fill('Kandulu Gan');
+  await page.waitForFunction(() => /already there/.test(document.querySelector('.todo-card').textContent));
+  await page.getByRole('button', { name: 'Save and next' }).click();
+  await page.waitForFunction(() => /2 left/.test(document.querySelector('.todo-card .muted')?.textContent || ''));
+  assert.equal(gh.edits.length, 1);
+  assert.deepEqual([gh.edits[0].title, gh.edits[0].singer], ['Kandulu Gan', '']);
+  await page.getByRole('button', { name: 'This is not a song' }).click();
+  await page.waitForFunction(() => /1 left/.test(document.querySelector('.todo-card .muted')?.textContent || ''));
+  assert.deepEqual(gh.edits[1].notSong, true);
+  assert.equal(gh.calls.length, 0, 'GitHub was never contacted');
+  // still gone after a reload and a fresh download of the public list
+  await page.reload();
+  await page.waitForSelector('.todo-card');
+  assert.match(await page.locator('.todo-card .muted').first().textContent(), /1 left/);
+  assert.deepEqual(page.errors, []);
+});
+
+test('singer tiles are in Sinhala alphabetical order, Sinhala names first', async () => {
+  const { gh, db } = newGitHub();
+  const snap = new Map(gh.head(db.branch).snap);
+  [['ග', 'ගුණදාස කපුගේ'], ['අ', 'අමරදේව'], ['ක', 'කරුණාරත්න දිවුල්ගනේ'], ['න', 'නන්දා මාලිනී']].forEach(([c, name], i) => {
+    const uid = `44444444-0000-4000-8000-00000000000${i}`;
+    snap.set(`notation-shelf/songs/${uid}.json`, gh.blob(JSON.stringify({ uid, title: `Song ${c}`, singer: name, notes: '', createdAt: 5, updatedAt: 5, deleted: false, pages: [{ file: 'img-1.jpg', rotation: 0 }], links: [], titleState: 0, sourceName: '' })));
+  });
+  gh.commit(db.branch, snap, 'sinhala singers');
+  const page = await open(gh, { cfg: memberCfg(gh, db) });
+  await ready(page);
+  await page.getByRole('link', { name: 'Singers' }).click();
+  await page.waitForSelector('.tile');
+  const names = await page.$$eval('.tile-name', (e) => e.map((x) => x.textContent));
+  // "Amaradeva" and "අමරදේව" sound the same, so they are one singer, shown in Sinhala (likewise Nanda Malini)
+  assert.deepEqual(names.slice(0, 4), ['අමරදේව', 'කරුණාරත්න දිවුල්ගනේ', 'ගුණදාස කපුගේ', 'නන්දා මාලිනී']);
+  assert.ok(!names.includes('Amaradeva') && !names.includes('Nanda Malini'));
+  const latin = names.slice(4);
+  assert.deepEqual(latin, [...latin].sort((a, b) => a.localeCompare(b)));
+  await shot(page, 'singers-sinhala');
 });

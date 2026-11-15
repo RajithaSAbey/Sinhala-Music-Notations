@@ -43,6 +43,11 @@ test('a name/singer change is queued, cleaned, and never touches the library dir
   assert.deepEqual([o.uid, o.title, o.singer], [U, 'Sanda Walawan', 'Nanda Malini']);
   assert.match(v.o.customMetadata.who, /^[0-9a-f]{16}$/);
 });
+test('a visitor can flag a to-do picture as not a song', async () => {
+  const e = env();
+  assert.equal((await edit(e, { uid: U, notSong: true })).status, 200);
+  assert.deepEqual(Object.keys(JSON.parse(new TextDecoder().decode([...e.store.values()][0].v))).sort(), ['at', 'notSong', 'uid']);
+});
 test('edit requests are checked', async () => {
   assert.equal((await edit(env(), { uid: U, title: '', singer: 'x' })).status, 400);
   assert.equal((await edit(env(), { uid: '../x', title: 'T' })).status, 400);

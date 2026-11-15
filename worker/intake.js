@@ -20,12 +20,13 @@ async function edit(req, env, cors, ip) {
   const uid = String(body?.uid ?? '');
   const title = clean(body?.title, 200), singer = clean(body?.singer, 200);
   if (!GROUP.test(uid)) return json(400, { error: 'Bad request.' }, cors);
-  if (!title) return json(400, { error: 'The song needs a name.' }, cors);
+  const notSong = body?.notSong === true;
+  if (!notSong && !title) return json(400, { error: 'The song needs a name.' }, cors);
   if (SPAM.test(title) || SPAM.test(singer)) return json(400, { error: 'Web addresses are not allowed in a name.' }, cors);
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${ip}|${env.SALT || 'salt'}`)));
   const who = [...digest.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('');
   const key = `edits/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.json`;
-  await env.INTAKE.put(key, JSON.stringify({ uid, title, singer, at: Date.now() }), { httpMetadata: { contentType: 'application/json' }, customMetadata: { who } });
+  await env.INTAKE.put(key, JSON.stringify(notSong ? { uid, notSong: true, at: Date.now() } : { uid, title, singer, at: Date.now() }), { httpMetadata: { contentType: 'application/json' }, customMetadata: { who } });
   return json(200, { ok: true }, cors);
 }
 

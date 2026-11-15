@@ -58,7 +58,7 @@ async function start(cfg, { first, keepAll }) {
 }
 
 function buildShell() {
-  const tabs = S.lib.isPublic ? TABS.filter(([id]) => id !== 'todo') : TABS;
+  const tabs = TABS;
   chip = h('button', { class: 'syncchip', type: 'button', onclick: () => doSync({ silent: false }) });
   main = h('main', { id: 'main', tabindex: '-1' });
   nav = h('nav', { class: 'tabs', 'aria-label': 'Main' }, tabs.map(([id, label, ic]) => h('a', { href: `#/${id}`, 'data-tab': id, class: 'tab' }, icon(ic, 24), h('span', {}, label), id === 'todo' ? h('b', { class: 'badge', hidden: true }) : null)));

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { key, toLatin, Index, tokens, similarity, same, hasSinhala } from '../js/phonetic.js';
 import { parse, create } from '../js/setupcode.js';
 import { titleFromName } from '../js/upload.js';
-import { parseSong, songJson } from '../js/library.js';
+import { parseSong, songJson, compareSinhala } from '../js/library.js';
 import { gitBlobSha } from '../js/util.js';
 
 test('key matches the Android app', () => {
@@ -63,4 +63,9 @@ test('song file keeps the Android shape', () => {
 
 test('git blob id is computed like git', async () => {
   assert.equal(await gitBlobSha(new TextEncoder().encode('hello\n')), 'ce013625030ba8dba906f756967f9e9ca394464a');
+});
+
+test('Sinhala alphabetical order', () => {
+  const names = ['නන්දා මාලිනී', 'Victor', 'ගුණදාස', 'අමරදේව', 'Amaradeva', 'කරුණාරත්න', 'ඉන්ද්‍රානි', 'ආනන්ද'];
+  assert.deepEqual([...names].sort(compareSinhala), ['අමරදේව', 'ආනන්ද', 'ඉන්ද්‍රානි', 'කරුණාරත්න', 'ගුණදාස', 'නන්දා මාලිනී', 'Amaradeva', 'Victor']);
 });

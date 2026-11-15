@@ -1,7 +1,7 @@
 // The database as this device sees it: songs, albums, pictures, and keeping them in step with GitHub.
 import { Repo } from './github.js';
 import { idb, prefs, pictures } from './store.js';
-import { Index, tokens, key, similarity, same } from './phonetic.js';
+import { Index, tokens, key, similarity, same, hasSinhala } from './phonetic.js';
 import { text, utf8, gitBlobSha, uuid, sleep, RateLimited, PermanentError } from './util.js';
 import { PUBLIC_BASE, EDIT_URL } from './config.js';
 
@@ -183,7 +183,8 @@ export class Library extends EventTarget {
     if (cat.v !== 1 || !Array.isArray(cat.songs)) throw new PermanentError('The public library has an unexpected format.');
     const fresh = new Map();
     for (const c of cat.songs) {
-      const s = parseSong({ uid: c.u, title: c.t, singer: c.g, notes: '', createdAt: c.c, updatedAt: c.m, deleted: false, pages: (c.p || []).map(([file, rotation, hash]) => ({ file, rotation, hash })), links: c.l || [], titleState: 0, sourceName: '' }, '');
+      const s = parseSong({ uid: c.u, title: c.t, singer: c.g, notes: '', createdAt: c.c, updatedAt: c.m, deleted: false, pages: (c.p || []).map(([file, rotation, hash]) => ({ file, rotation, hash })), links: c.l || [], titleState: c.x === 2 ? 2 : 0, sourceName: c.o || '' }, '');
+      if (s.titleState === 2 && !s.title) s.title = UNTITLED;
       if (s.pages.length) fresh.set(s.uid, prep(s));
     }
     this.applyPublicEdits(fresh);
@@ -202,27 +203,32 @@ export class Library extends EventTarget {
     let dirty = false;
     for (const [uid, e] of Object.entries(edits)) {
       const s = map.get(uid);
-      if (!s || Date.now() - e.at > 4 * 86400_000 || (s.title === e.title && s.singer === e.singer && e.seen)) { delete edits[uid]; dirty = true; continue; }
-      if (s.title === e.title && s.singer === e.singer) { e.seen = true; dirty = true; }
-      s.title = e.title; s.singer = e.singer; prep(s);
+      if (!s || Date.now() - e.at > 4 * 86400_000 || (e.flag && s.notes.includes(NOT_A_SONG) && e.seen) || (!e.flag && s.title === e.title && s.singer === e.singer && s.titleState === 0 && e.seen)) { delete edits[uid]; dirty = true; continue; }
+      if (e.flag && s.notes.includes(NOT_A_SONG)) { e.seen = true; dirty = true; }
+      if (e.flag) { s.notes = NOT_A_SONG; prep(s); continue; }
+      if (s.title === e.title && s.singer === e.singer && s.titleState === 0) { e.seen = true; dirty = true; }
+      s.title = e.title; s.singer = e.singer; if (e.named) s.titleState = 0; prep(s);
     }
     if (dirty) prefs.set('pubEdits', edits);
   }
 
   /** Visitors: asks for a new name/singer. It is applied to the database within a few hours (and can be undone by the admin). */
-  async suggestEdit(uid, title, singer) {
+  async suggestEdit(uid, title, singer, { notSong = false } = {}) {
     let res;
-    try { res = await fetch(EDIT_URL, { method: 'POST', body: JSON.stringify({ uid, title, singer }) }); } catch { throw new Error('No connection. Check your internet and try again.'); }
+    try { res = await fetch(EDIT_URL, { method: 'POST', body: JSON.stringify(notSong ? { uid, notSong: true } : { uid, title, singer }) }); } catch { throw new Error('No connection. Check your internet and try again.'); }
     if (!res.ok) {
       let msg = '';
       try { msg = (await res.json()).error; } catch { /* no details */ }
       throw new Error(res.status === 429 ? 'Too many changes at once. Please wait a minute and try again.' : msg || 'The change could not be sent. Please try again.');
     }
     const edits = prefs.get('pubEdits', {});
-    edits[uid] = { title: title.trim(), singer: singer.trim(), at: Date.now() };
-    prefs.set('pubEdits', edits);
     const s = this.songs.get(uid);
-    if (s) { s.title = title.trim(); s.singer = singer.trim(); prep(s); await idb.putSongs([s]); this.changed('songs'); }
+    edits[uid] = notSong ? { flag: true, at: Date.now() } : { title: title.trim(), singer: singer.trim(), at: Date.now(), named: s?.titleState === 2 };
+    prefs.set('pubEdits', edits);
+    if (s) {
+      if (notSong) s.notes = NOT_A_SONG; else { s.title = title.trim(); s.singer = singer.trim(); if (s.titleState === 2) s.titleState = 0; }
+      prep(s); await idb.putSongs([s]); this.reindex(); this.changed('songs');
+    }
   }
 
   /** The search list the nightly job prepares (branch web-catalog): all songs in one download. uid -> song */
@@ -403,18 +409,39 @@ export class Library extends EventTarget {
     }
     return best;
   }
+  /** Singers in alphabetical order: names in Sinhala letters first (Sinhala alphabet order), then names in English letters. */
   singers() {
     const m = new Map();
     for (const s of this.live()) {
       const name = s.singer.trim();
       if (!name || s.titleState === 2) continue;
       const k = s._sk;
-      const e = m.get(k) || { name, key: k, songs: [] };
+      const e = m.get(k) || { name, key: k, songs: [], spellings: new Map() };
       e.songs.push(s);
+      e.spellings.set(name, (e.spellings.get(name) || 0) + 1);
       m.set(k, e);
     }
-    return [...m.values()].sort((a, b) => b.songs.length - a.songs.length || a.key.localeCompare(b.key));
+    // the same singer spelled in Sinhala and in English is one tile, shown with the Sinhala spelling when there is one
+    for (const e of m.values()) {
+      const all = [...e.spellings].sort((a, b) => b[1] - a[1]);
+      e.name = (all.find(([n]) => hasSinhala(n)) || all[0])[0];
+    }
+    return [...m.values()].sort((a, b) => compareSinhala(a.name, b.name));
   }
+}
+
+/**
+ * Sinhala alphabet order. The Sinhala block of Unicode is already laid out in alphabetical order (vowels, then consonants,
+ * each followed by its vowel signs), so comparing letter by letter gives the order a Sinhala reader expects.
+ * Names in Sinhala letters come before names in English letters.
+ */
+export function compareSinhala(a, b) {
+  const sa = hasSinhala(a), sb = hasSinhala(b);
+  if (sa !== sb) return sa ? -1 : 1;
+  if (!sa) return a.localeCompare(b, 'en', { sensitivity: 'base' }) || a.localeCompare(b);
+  const strip = (t) => t.replace(/[\u200c\u200d]/g, '').trim();
+  const x = strip(a), y = strip(b);
+  return x < y ? -1 : x > y ? 1 : 0;
 }
 
 /** A copy of a song without the search helpers. */
