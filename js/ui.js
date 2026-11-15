@@ -1,6 +1,6 @@
 // Shared building blocks: icons, messages, dialogs, progress screens.
 import { h } from './util.js';
-import { Index, tokens } from './phonetic.js';
+import { Index, tokens, similarity } from './phonetic.js';
 
 const PATHS = {
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
@@ -157,13 +157,14 @@ export function singerField(lib, { value = '', label = 'Singer', placeholder = '
 }
 
 /** Name + singer in one box. Resolves { title, singer } or null. */
-export async function nameDialog(lib, { heading, title = '', singer = '', yes = 'Save', needTitle = true }) {
-  const t = h('input', { type: 'text', class: 'field', value: title, placeholder: 'Song name', 'aria-label': 'Song name', autocomplete: 'off' });
+export async function nameDialog(lib, { heading, title = '', singer = '', uid = '', yes = 'Save', needTitle = true }) {
   const sf = singerField(lib, { value: singer });
+  const tf = titleField(lib, { value: title, exceptUid: uid, onPick: (s) => { if (!sf.input.value.trim() && s.singer) sf.input.value = s.singer; } });
+  const t = tf.input;
   let out = null;
   const ok = await dialog({
     title: heading, outsideClose: false,
-    body: [h('label', { class: 'lbl' }, 'Song name'), t, h('label', { class: 'lbl' }, 'Singer'), sf.el],
+    body: [h('label', { class: 'lbl' }, 'Song name'), tf.el, h('label', { class: 'lbl' }, 'Singer'), sf.el],
     actions: [{ label: 'Cancel', value: false }, { label: yes, primary: true, onClick: () => {
       if (needTitle && !t.value.trim()) { toast('The song needs a name.', { error: true }); t.focus(); return undefined; }
       let singer;
@@ -172,4 +173,38 @@ export async function nameDialog(lib, { heading, title = '', singer = '', yes = 
     } }],
   });
   return ok ? out : null;
+}
+
+/** Songs already in the library whose name fits what is being typed (English or Sinhala letters), best first. */
+export function matchingTitles(lib, query, exceptUid = '', n = 6) {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const low = q.toLowerCase();
+  const pool = lib.live().filter((s) => s.titleState !== 2 && s.uid !== exceptUid);
+  const hits = lib.search(q, { list: pool });
+  if (hits.length < n) { // also offer near spellings ("Hithuwakaraya" for "Hithuwakkaraya")
+    const have = new Set(hits.map((s) => s.uid));
+    for (const s of pool) if (!have.has(s.uid) && q.length >= 4 && similarity(q, s.title) >= 0.7) hits.push(s);
+  }
+  return hits
+    .map((s) => [s, (s.title.toLowerCase().startsWith(low) ? 2 : 0) + similarity(q, s.title)])
+    .sort((a, b) => b[1] - a[1]).slice(0, n).map(([s]) => s);
+}
+
+/**
+ * A song name box that suggests songs already in the library while typing, so the same song is not added twice under a
+ * slightly different name. Tap a suggestion to use its exact name (onPick also gets the song, to fill in the singer).
+ */
+export function titleField(lib, { value = '', exceptUid = '', placeholder = 'Song name', onInput, onPick } = {}) {
+  const input = h('input', { type: 'text', class: 'field', value, placeholder, 'aria-label': 'Song name', autocomplete: 'off', role: 'combobox', 'aria-expanded': 'false' });
+  const list = h('div', { class: 'suggest', role: 'listbox', 'aria-label': 'Songs already in the library' });
+  const draw = () => {
+    const hits = matchingTitles(lib, input.value, exceptUid).filter((s) => s.title !== input.value.trim());
+    input.setAttribute('aria-expanded', String(hits.length > 0));
+    list.replaceChildren(...hits.map((s) => h('button', { class: 'chip', type: 'button', role: 'option', onclick: () => { input.value = s.title; onInput?.(s.title); onPick?.(s); draw(); input.focus(); } }, s.title, s.singer ? h('span', { class: 'muted small' }, ` · ${s.singer}`) : null)));
+    list.hidden = !hits.length;
+  };
+  input.addEventListener('input', () => { onInput?.(input.value); draw(); });
+  list.hidden = true;
+  return { el: h('div', { class: 'singer-field' }, input, list), input };
 }

@@ -2,7 +2,7 @@
 import { h, plural } from '../util.js';
 import { S, openSong, isAdmin, canEditSongs, go } from '../state.js';
 const canHelp = () => canEditSongs() || S.lib?.isPublic;
-import { icon, toast, confirmBox, empty, friendly, chip, singerField } from '../ui.js';
+import { icon, toast, confirmBox, empty, friendly, chip, singerField, matchingTitles } from '../ui.js';
 import { similarity } from '../phonetic.js';
 import { prefs } from '../store.js';
 import { titleFromName } from '../upload.js';
@@ -70,10 +70,10 @@ export function todoTab(root) {
       const v = title.value.trim();
       hint.replaceChildren();
       note.textContent = '';
-      if (v.length < 3) return;
-      const near = lib.live().filter((x) => x.titleState !== 2 && x.uid !== s.uid).map((x) => [similarity(v, x.title), x]).filter(([sim]) => sim >= 0.55).sort((a, b) => b[0] - a[0]).slice(0, 5);
+      if (v.length < 2) return;
+      const near = matchingTitles(lib, v, s.uid, 5).filter((x) => x.title !== v);
       if (near.length) {
-        hint.append(h('span', { class: 'muted small' }, 'Already in the database: '), ...near.map(([, x]) => chip(x.title, { onClick: () => { title.value = x.title; if (!singer.value) singer.value = x.singer; suggest(); } })));
+        hint.append(h('span', { class: 'muted small' }, 'Already in the database: '), ...near.map((x) => chip(x.singer ? `${x.title} · ${x.singer}` : x.title, { onClick: () => { title.value = x.title; if (!singer.value) singer.value = x.singer; suggest(); } })));
         if (lib.findSame(v, s.uid)) note.textContent = 'A song with this name is already there. These pictures will be added to it as extra pages.';
       }
     };

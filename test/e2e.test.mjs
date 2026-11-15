@@ -581,7 +581,7 @@ test('public edit: anyone can fix a name or singer (a request, shown at once her
   assert.equal(await page.getByRole('button', { name: /Delete/ }).count(), 0);
   assert.equal(await page.getByRole('button', { name: /Edit everything/ }).count(), 0);
   await page.getByRole('button', { name: /Change the name or singer/ }).click();
-  await page.getByRole('textbox', { name: 'Song name' }).fill('Seethala Gee (corrected)');
+  await page.getByRole('combobox', { name: 'Song name' }).fill('Seethala Gee (corrected)');
   // existing singers are suggested while typing, in English or Sinhala letters
   await page.getByRole('combobox', { name: 'Singer' }).fill('nanda');
   await page.getByRole('option', { name: /නන්දා මාලිනී/ }).waitFor();
@@ -709,7 +709,7 @@ test('selecting text in the rename box (double-click, or dragging out of it) nev
   await page.waitForSelector('.viewer .v-img[src]');
   await page.getByRole('button', { name: 'More' }).click();
   await page.getByRole('button', { name: /Change the name or singer/ }).click();
-  const name = page.getByRole('textbox', { name: 'Song name' });
+  const name = page.getByRole('combobox', { name: 'Song name' });
   await name.waitFor();
   await name.fill('Sanda Walawan');
   await name.dblclick();                                  // select a word
@@ -736,4 +736,35 @@ test('the plain web address opens the singer list', async () => {
   await page.getByRole('link', { name: 'Songs' }).click();
   await page.waitForSelector('.songs .row');
   assert.match(page.url(), /#\/songs$/);
+});
+
+test('song names already in the library are suggested while typing (and fill in the singer)', async () => {
+  const { gh, db } = newGitHub();
+  const page = await open(gh, { cfg: memberCfg(gh, db) });
+  await ready(page);
+  // helper: the edit screen of a song
+  await page.goto(`${base}#/edit/00000000-0000-4000-8000-000000000002`);
+  const title = page.getByRole('combobox', { name: 'Song name' });
+  await title.fill('kandu');
+  await page.getByRole('option', { name: /Kandulu Gan/ }).first().waitFor();
+  assert.ok((await page.getByRole('option', { name: /Kandulu Gan/ }).count()) >= 1);
+  await title.fill('කඳුළු'); // Sinhala letters find the English-spelt title too
+  await page.getByRole('option', { name: /Kandulu Gan/ }).first().waitFor();
+  await page.getByRole('combobox', { name: 'Singer' }).fill('');
+  await page.getByRole('option', { name: /Kandulu Gan$|Kandulu Gan ·/ }).first().click();
+  assert.equal(await title.inputValue(), 'Kandulu Gan');
+  assert.equal(await page.getByRole('combobox', { name: 'Singer' }).inputValue(), 'නන්දා මාලිනී');
+  assert.equal(await page.getByRole('option', { name: /^Kandulu Gan( ·.*)?$/ }).count(), 0, 'the chosen name is no longer offered');
+  await shot(page, 'title-suggest');
+  // the same box in the song menu, for helpers and for visitors
+  await page.goto(`${base}#/songs`);
+  const pub = await open(gh, { scale: 1 });
+  await ready(pub);
+  await searchFor(pub, 'Seethala');
+  await pub.locator('.songs .row-main').first().click();
+  await pub.waitForSelector('.viewer .v-img[src]');
+  await pub.getByRole('button', { name: 'More' }).click();
+  await pub.getByRole('button', { name: /Change the name or singer/ }).click();
+  await pub.getByRole('combobox', { name: 'Song name' }).fill('nil ah');
+  await pub.getByRole('option', { name: /Nil Ahase/ }).first().waitFor();
 });

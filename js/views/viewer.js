@@ -231,7 +231,7 @@ export function viewer(root, uid) {
     if (r) r.fn();
   }
   async function rename() {
-    const r = await nameDialog(lib, { heading: lib.isPublic ? 'Correct the name or singer' : 'Name and singer', title: song.title === UNTITLED ? '' : song.title, singer: song.singer });
+    const r = await nameDialog(lib, { heading: lib.isPublic ? 'Correct the name or singer' : 'Name and singer', title: song.title === UNTITLED ? '' : song.title, singer: song.singer, uid });
     if (!r) return;
     const { title: t, singer: s } = r;
     try {
