@@ -768,3 +768,53 @@ test('song names already in the library are suggested while typing (and fill in 
   await pub.getByRole('combobox', { name: 'Song name' }).fill('nil ah');
   await pub.getByRole('option', { name: /Nil Ahase/ }).first().waitFor();
 });
+
+test('turning pages stays inside the song; only an album carries on to the next song', async () => {
+  const { gh, db } = newGitHub();
+  const page = await open(gh, { cfg: memberCfg(gh, db) });
+  await ready(page);
+  const rightEdge = async () => { const b = await page.locator('.v-stage').boundingBox(); await page.mouse.click(b.x + b.width - 20, b.y + b.height / 2); };
+  // from the song list: 2 pages, then it stops
+  await page.locator('.songs .row-main', { hasText: 'සැන්දෑ වලාවන්' }).first().click();
+  await page.waitForFunction(() => document.querySelector('.v-img')?.naturalWidth > 0);
+  const title = await page.locator('.v-title').textContent();
+  await rightEdge();
+  await page.waitForFunction(() => /Page 2 of 2/.test(document.querySelector('.v-count').textContent));
+  await rightEdge();
+  await page.waitForFunction(() => /last page/.test(document.querySelector('#toast')?.textContent || ''));
+  assert.equal(await page.locator('.v-title').textContent(), title, 'still the same song');
+  assert.match(await page.locator('.v-count').textContent(), /Page 2 of 2/);
+  assert.equal(await page.locator('.v-sub').textContent().then((t) => / of \d+/.test(t.replace('Page', ''))), false, 'no "n of m" song counter');
+  await page.keyboard.press('PageDown');
+  assert.equal(await page.locator('.v-title').textContent(), title);
+  // and backwards from page 1
+  await page.keyboard.press('PageUp');
+  await page.waitForFunction(() => /Page 1 of 2/.test(document.querySelector('.v-count').textContent));
+  await page.keyboard.press('PageUp');
+  await page.waitForFunction(() => /first page/.test(document.querySelector('#toast')?.textContent || ''));
+  assert.equal(await page.locator('.v-title').textContent(), title);
+  // the same song from an album: after its last page, the next song of the album opens
+  await page.keyboard.press('Escape');
+  await page.getByRole('link', { name: 'Albums' }).click();
+  await page.getByRole('button', { name: '+ New' }).click();
+  await page.getByLabel('Album name').fill('Set');
+  await page.getByRole('button', { name: 'Create' }).click();
+  await page.waitForSelector('ol.songs, .empty');
+  await page.getByRole('link', { name: 'Songs' }).click();
+  await page.getByRole('button', { name: 'Select', exact: true }).click();
+  await page.locator('.songs .row-main', { hasText: 'සැන්දෑ වලාවන්' }).first().click();
+  await page.locator('.songs .row-main', { hasText: 'Kandulu Gan' }).first().click();
+  await page.getByRole('button', { name: 'Add to album' }).click();
+  await page.getByRole('button', { name: /^Set/ }).click();
+  await page.getByRole('link', { name: 'Albums' }).click();
+  await page.locator('.card', { hasText: 'Set' }).click();
+  await page.waitForSelector('ol.songs .row');
+  await page.locator('ol.songs .row-main').first().click();
+  await page.waitForFunction(() => document.querySelector('.v-img')?.naturalWidth > 0);
+  const first = await page.locator('.v-title').textContent();
+  await page.keyboard.press('PageDown');
+  if (/Page 1 of 2/.test(await page.locator('.v-count').textContent()) || true) { await page.waitForTimeout(150); }
+  for (let i = 0; i < 3; i++) await page.keyboard.press('PageDown');
+  await page.waitForFunction((t) => document.querySelector('.v-title').textContent !== t, first);
+  assert.match(await page.locator('.v-sub').textContent(), /2 of 2 in Set/);
+});

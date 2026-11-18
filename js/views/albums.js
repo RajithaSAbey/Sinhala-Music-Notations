@@ -45,7 +45,7 @@ export function albumPage(root, uid) {
     const songs = lib.albumOrder(lib.album(uid));
     info.textContent = `${plural(songs.length, 'song')} · tap a song to start; Next goes to the following song in this list.`;
     list.replaceChildren(...(songs.length ? songs.map((s, i) => h('li', { class: 'row' },
-      h('button', { class: 'row-main', type: 'button', onclick: () => openSong(s.uid, songs.map((x) => x.uid), a.name) }, h('span', { class: 'row-title' }, `${i + 1}. ${s.title}`), h('span', { class: 'row-sub muted' }, s.singer || ' ')),
+      h('button', { class: 'row-main', type: 'button', onclick: () => openSong(s.uid, songs.map((x) => x.uid), a.name, { setList: true }) }, h('span', { class: 'row-title' }, `${i + 1}. ${s.title}`), h('span', { class: 'row-sub muted' }, s.singer || ' ')),
       upBtn(songs, i),
       downBtn(songs, i),
       h('button', { class: 'iconbtn', type: 'button', 'aria-label': 'Take out of this album', onclick: async () => { await lib.editAlbum(uid, (x) => { x.songs = x.songs.filter((u) => u !== s.uid); }); } }, icon('x', 18)))) : [empty('This album is empty', 'Go to Songs, tap “Select”, choose songs and press “Add to album”.')]));

@@ -40,7 +40,11 @@ export const canEditSongs = () => S.lib?.role === 'admin' || S.lib?.role === 'me
 export const isAdmin = () => S.lib?.role === 'admin';
 
 export function go(hash) { if (location.hash === hash) window.dispatchEvent(new HashChangeEvent('hashchange')); else location.hash = hash; }
-export function openSong(uid, uids, name = '') {
-  S.ctx = { uids: uids || [uid], name };
+/**
+ * Opens the reader. Turning pages only ever moves inside this song, unless the song is opened from an album (a set list):
+ * then going past the last page continues with the next song of the album.
+ */
+export function openSong(uid, uids, name = '', { setList = false } = {}) {
+  S.ctx = { uids: uids || [uid], name, setList };
   location.hash = `#/song/${uid}`;
 }

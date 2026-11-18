@@ -22,7 +22,8 @@ export function viewer(root, uid) {
   let lock = null;
   let gone = false;
 
-  const ctx = S.ctx?.uids?.includes(uid) ? S.ctx : { uids: [uid], name: '' };
+  // Only a song opened from an album moves on to the next song; otherwise the page buttons stay inside this song.
+  const ctx = S.ctx?.setList && S.ctx.uids?.includes(uid) ? S.ctx : { uids: [uid], name: '', setList: false };
   const pos = () => ctx.uids.indexOf(uid);
 
   const img = h('img', { alt: '', draggable: 'false', class: 'v-img' });
