@@ -35,3 +35,4 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--acc);outline-of
 .cell.u{border-bottom:3px solid var(--fg);border-radius:6px 6px 0 0}
 .slur{display:inline-flex;gap:6px;align-items:center;padding:0 2px 6px;border:2px solid var(--fg);border-top:none;border-radius:0 0 22px 22px}
 .latin{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.lt.u{border-bottom:3px solid var(--fg)}
+.cell{border:0;color:var(--fg);cursor:pointer;min-height:40px}.cell.sel{outline:3px solid var(--acc);outline-offset:1px}.cell.mark{background:transparent}.marks{margin-top:8px;display:grid;gap:6px}

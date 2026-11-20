@@ -69,3 +69,32 @@ test('sending with nothing checked is refused politely', async () => {
   await page.click('#send');
   assert.match(await page.textContent('#sent'), /Check at least one bar/);
 });
+
+test('tap notes, then put a bracket or a bar under them', async () => {
+  const page = await browser.newPage({ viewport: { width: 400, height: 900 } });
+  await page.route('https://intake.sinhala-music.workers.dev/**', (r) => r.fulfill({ status: 200, body: '{}' }));
+  await page.goto(`${base}check/`);
+  await page.waitForSelector('#card:not([hidden])');
+  await page.fill('#in', 'ම ග ස ධ');
+  assert.equal(await page.locator('#brk').isDisabled(), true);
+  await page.locator('#cells .cell').nth(1).click();   // ග
+  await page.locator('#cells .cell').nth(2).click();   // ස
+  assert.match(await page.textContent('#selhint'), /2 notes selected/);
+  await page.click('#brk');
+  assert.equal(await page.inputValue('#in'), 'ම ( ග ස ) ධ');
+  assert.equal(await page.locator('#cells .slur .cell').count(), 2);
+  await page.locator('#cells .cell').nth(3).click();   // ධ
+  await page.click('#bar');
+  assert.equal(await page.inputValue('#in'), 'ම ( ග ස ) ධ_');
+  assert.equal(await page.locator('#cells .cell.u').count(), 1);
+  await page.click('#bar');                             // again = off
+  assert.equal(await page.inputValue('#in'), 'ම ( ග ස ) ධ');
+  await page.locator('#cells .cell').nth(1).click();
+  await page.click('#clr');
+  assert.equal(await page.inputValue('#in'), 'ම ග ස ධ');
+  // a bracket over notes that already sit in one: replaced, not nested
+  await page.fill('#in', 'ම ( ග ස ) ධ');
+  await page.locator('#cells .cell').nth(0).click(); await page.locator('#cells .cell').nth(3).click();
+  await page.click('#brk');
+  assert.equal(await page.inputValue('#in'), '( ම ග ස ධ )');
+});
