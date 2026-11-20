@@ -1,0 +1,4 @@
+numpy
+librosa
+basic-pitch
+pretty_midi
