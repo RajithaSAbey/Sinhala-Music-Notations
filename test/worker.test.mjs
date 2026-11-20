@@ -59,6 +59,23 @@ test('edit requests are checked', async () => {
   const long = env(); await edit(long, { uid: U, title: 'x'.repeat(500) });
   assert.equal(JSON.parse(new TextDecoder().decode([...long.store.values()][0].v)).title.length, 200);
 });
+const sendFix = (e, body, origin = ORIGIN) => worker.fetch(new Request('https://w/fix', { method: 'POST', body: JSON.stringify(body), headers: { origin } }), e);
+test('review corrections are stored privately and only the owner can read them', async () => {
+  const e = env(); e.READ_TOKEN = 'secret';
+  e.INTAKE.get = async (k) => { const v = e.store.get(k); return v ? { text: async () => new TextDecoder().decode(v.v) } : null; };
+  e.INTAKE.list = async ({ prefix }) => ({ objects: [...e.store.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })) });
+  e.INTAKE.delete = async (k) => { e.store.delete(k); };
+  const r = await sendFix(e, { sheet: 'song-1', who: 'Kamal', answers: [{ id: 'R1.B2', status: 'fix', fix: 'ම ග ස —', note: 'n' }, { id: 'R2.B1', status: 'ok' }, { id: '../x', status: 'ok' }, { id: 'R3.B1', status: 'weird' }] });
+  assert.equal(r.status, 200); assert.equal((await r.json()).saved, 2);
+  assert.equal((await sendFix(e, { sheet: '../x', answers: [] })).status, 400);
+  assert.equal((await sendFix(e, { sheet: 'song-1', answers: [{ id: 'R1.B1', status: 'ok' }] }, 'https://evil.example')).status, 403);
+  assert.equal((await worker.fetch(new Request('https://w/fixes?sheet=song-1'), e)).status, 401);
+  assert.equal((await worker.fetch(new Request('https://w/fixes?sheet=song-1', { headers: { authorization: 'Bearer nope' } }), e)).status, 401);
+  const list = await (await worker.fetch(new Request('https://w/fixes?sheet=song-1', { headers: { authorization: 'Bearer secret' } }), e)).json();
+  assert.equal(list.submissions.length, 1); assert.equal(list.submissions[0].who, 'Kamal'); assert.equal(list.submissions[0].answers[0].fix, 'ම ග ස —');
+  const del = await worker.fetch(new Request(`https://w/fixes?key=${encodeURIComponent(list.submissions[0].key)}`, { method: 'DELETE', headers: { authorization: 'Bearer secret' } }), e);
+  assert.equal(del.status, 200); assert.equal(e.store.size, 0);
+});
 test('cannot read, list or delete through the worker', async () => {
   const e = env();
   for (const m of ['GET', 'DELETE', 'PUT']) assert.equal((await worker.fetch(new Request('https://w/upload', { method: m, headers: { origin: ORIGIN } }), e)).status, 404);

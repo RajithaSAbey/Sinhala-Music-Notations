@@ -5,10 +5,14 @@ ACCOUNT="${CLOUDFLARE_ACCOUNT_ID:-fd4fa5026c321a78649e4f69275d6252}"
 NAME="${WORKER_NAME:-intake}"
 API="https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/workers/scripts/$NAME"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-META='{"main_module":"intake.js","compatibility_date":"2025-01-01","bindings":[
+META='{"main_module":"intake.js","compatibility_date":"2025-01-01","keep_bindings":["secret_text"],"bindings":[
  {"type":"r2_bucket","name":"INTAKE","bucket_name":"sinhala-music-intake"},
  {"type":"ratelimit","name":"LIMITER","namespace_id":"1001","simple":{"limit":30,"period":60}},
  {"type":"plain_text","name":"ACCEPTING","text":"yes"}]}'
+# READ_TOKEN (optional): the secret the owner uses to read the review corrections; it is kept on later deploys when not given again
+if [ -n "${READ_TOKEN:-}" ]; then
+  META=$(printf '%s' "$META" | sed 's/"bindings":\[/"bindings":[{"type":"secret_text","name":"READ_TOKEN","text":"'"$READ_TOKEN"'"},/')
+fi
 curl -sS -X PUT "$API" -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
   -F "metadata=$META;type=application/json" -F "intake.js=@$HERE/intake.js;type=application/javascript+module;filename=intake.js"
 echo

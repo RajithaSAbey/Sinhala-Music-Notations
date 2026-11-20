@@ -30,6 +30,48 @@ async function edit(req, env, cors, ip) {
   return json(200, { ok: true }, cors);
 }
 
+/** Corrections to a typeset notation sheet, sent by whoever has the review page open. Stored privately, never applied by themselves. */
+async function fix(req, env, cors) {
+  const text = await req.text();
+  if (text.length > 40000) return json(413, { error: 'Too much text.' }, cors);
+  let o;
+  try { o = JSON.parse(text); } catch { return json(400, { error: 'Bad request.' }, cors); }
+  const sheet = clean(o?.sheet, 40);
+  if (!/^[a-z0-9-]{1,40}$/.test(sheet) || !Array.isArray(o?.answers) || o.answers.length > 200) return json(400, { error: 'Bad request.' }, cors);
+  const answers = [];
+  for (const a of o.answers) {
+    const id = clean(a?.id, 12);
+    const status = ['ok', 'fix', 'skip'].includes(a?.status) ? a.status : '';
+    if (!/^R\d{1,2}\.B\d$/.test(id) || !status) continue;
+    answers.push({ id, status, fix: status === 'fix' ? clean(a.fix, 120) : '', note: clean(a?.note, 200) });
+  }
+  if (!answers.length) return json(400, { error: 'Nothing to save.' }, cors);
+  const key = `fixes/${sheet}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.json`;
+  await env.INTAKE.put(key, JSON.stringify({ sheet, who: clean(o?.who, 60), at: Date.now(), answers }), { httpMetadata: { contentType: 'application/json' } });
+  return json(200, { ok: true, saved: answers.length }, cors);
+}
+
+/** Only the owner (with the secret) can read or tidy the submissions. */
+async function readFixes(req, env, url) {
+  const auth = req.headers.get('authorization') || '';
+  if (!env.READ_TOKEN || auth !== `Bearer ${env.READ_TOKEN}`) return json(401, { error: 'no' });
+  const sheet = (url.searchParams.get('sheet') || '').replace(/[^a-z0-9-]/g, '');
+  if (req.method === 'DELETE') {
+    const key = url.searchParams.get('key') || '';
+    if (!key.startsWith('fixes/')) return json(400, { error: 'bad key' });
+    await env.INTAKE.delete(key);
+    return json(200, { ok: true });
+  }
+  if (req.method !== 'GET') return json(405, { error: 'no' });
+  const listed = await env.INTAKE.list({ prefix: `fixes/${sheet}`, limit: 500 });
+  const out = [];
+  for (const o of listed.objects || []) {
+    const body = await env.INTAKE.get(o.key);
+    if (body) { try { out.push({ key: o.key, ...(JSON.parse(await body.text())) }); } catch { /* skip a broken file */ } }
+  }
+  return json(200, { submissions: out });
+}
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
@@ -39,7 +81,8 @@ export default {
 
     if (req.method === 'OPTIONS') return new Response(null, { status: allowed ? 204 : 403, headers: cors });
     if (url.pathname === '/' && req.method === 'GET') return new Response('Sinhala Music Notations: intake is running.', { headers: { 'content-type': 'text/plain' } });
-    if ((url.pathname !== '/upload' && url.pathname !== '/edit') || req.method !== 'POST') return json(404, { error: 'not found' }, cors);
+    if (url.pathname === '/fixes') return readFixes(req, env, url);
+    if ((url.pathname !== '/upload' && url.pathname !== '/edit' && url.pathname !== '/fix') || req.method !== 'POST') return json(404, { error: 'not found' }, cors);
     if (!allowed) return json(403, { error: 'This address may not send pictures.' }, cors);
     if (env.ACCEPTING === 'no') return json(503, { error: 'Uploads are paused for now. Please try again later.' }, cors);
 
@@ -50,6 +93,7 @@ export default {
     }
 
     if (url.pathname === '/edit') return edit(req, env, cors, ip);
+    if (url.pathname === '/fix') return fix(req, env, cors);
 
     const group = req.headers.get('x-group') || '';
     const index = Number(req.headers.get('x-index'));

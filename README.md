@@ -55,3 +55,7 @@ npm run serve       # http://localhost:8080
 ```
 
 `vendor/pdfjs` is pdf.js (Apache-2.0), used to turn PDF pages into pictures in the browser.
+
+## Notation review page
+
+`check/` is a public page where anyone can check a typeset notation sheet bar by bar and send corrections (no login). Corrections go to the Worker (`/fix`), are stored in the private bucket, and can only be read with the owner's secret (`/fixes`). Nothing is applied automatically.

@@ -39,7 +39,7 @@ jobs:
       - name: Keep only what the site needs
         run: |
           mkdir _site
-          cp -r index.html app.css manifest.webmanifest sw.js js icons vendor _site/
+          cp -r index.html app.css manifest.webmanifest sw.js js icons vendor check _site/
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
