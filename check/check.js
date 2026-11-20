@@ -9,10 +9,14 @@ const norm = (t) => [...t].map((c) => (/[A-Za-z]/.test(c) && SIN[c.toUpperCase()
 
 function cells(text) {
   const box = $('#cells'); box.replaceChildren();
+  const stack = []; let cur = box;
   for (const g of text.trim().split(/\s+/).filter(Boolean)) {
+    if (g === '(') { const w = document.createElement('span'); w.className = 'slur'; cur.append(w); stack.push(cur); cur = w; continue; }
+    if (g === ')') { cur = stack.pop() || box; continue; }
     const s = document.createElement('span');
-    s.className = 'cell' + (/^[+—\-‡]+$/.test(g) ? ' mark' : '');
-    s.textContent = g; box.append(s);
+    const und = g.endsWith('_');
+    s.className = 'cell' + (/^[+—\-‡]+$/.test(g) ? ' mark' : '') + (und ? ' u' : '');
+    s.textContent = und ? g.slice(0, -1) : g; cur.append(s);
   }
 }
 function show(n) {
@@ -24,7 +28,16 @@ function show(n) {
   $('#img').src = d.img;
   const cur = s.fix != null ? s.fix : d.text;
   $('#in').value = cur; cells(cur);
-  $('#latin').textContent = d.latin || 'none written in this bar';
+  const lat = $('#latin'); lat.replaceChildren();
+  if (!d.latin) lat.textContent = 'none written in this bar';
+  else {
+    const stack = []; let cur = lat;
+    for (const g of d.latin.split(/\s+/).filter(Boolean)) {
+      if (g === '(') { const w = document.createElement('span'); w.className = 'slur'; cur.append(w); stack.push(cur); cur = w; continue; }
+      if (g === ')') { cur = stack.pop() || lat; continue; }
+      const und = g.endsWith('_'); const sp = document.createElement('span'); sp.className = 'lt' + (und ? ' u' : ''); sp.textContent = und ? g.slice(0, -1) : g; cur.append(sp);
+    }
+  }
   $('#note').value = s.note || '';
   $('#count').textContent = `${i + 1} of ${DATA.length}`;
   $('#st').textContent = s.status ? { ok: 'Marked: looks right', fix: 'Marked: fixed', skip: 'Marked: cannot tell' }[s.status] : 'Not checked yet';
@@ -47,7 +60,7 @@ function mark(status) {
 }
 function palette() {
   const pal = $('#pal');
-  for (const [k, n] of [['ස', 'sa'], ['රි', 'ri'], ['ග', 'ga'], ['ම', 'ma'], ['ප', 'pa'], ['ධ', 'dha'], ['නි', 'ni'], ['+', 'plus'], ['—', 'dash'], ['^', 'dot above'], [' ', 'space']]) {
+  for (const [k, n] of [['ස', 'sa'], ['රි', 'ri'], ['ග', 'ga'], ['ම', 'ma'], ['ප', 'pa'], ['ධ', 'dha'], ['නි', 'ni'], ['+', 'plus'], ['—', 'dash'], ['^', 'dot above'], ['_', 'bar under the note'], ['(', 'start of a bracket under the notes'], [')', 'end of the bracket'], [' ', 'space']]) {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'k'; b.setAttribute('aria-label', n); b.textContent = k === ' ' ? 'space' : k;
     b.addEventListener('click', () => {
       const el = $('#in'), a = el.selectionStart ?? el.value.length, z = el.selectionEnd ?? a;
